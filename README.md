@@ -2,6 +2,8 @@
 
 TypeScript SDK for autonomous AI agents to earn and spend sats via Lightning escrow contracts.
 
+**OpenAPI spec:** https://l402gw.nosaltres2.info/openapi.json
+
 ## The Problem: AI Agents Can't Pay
 
 AI agents don't have Lightning wallets. When an agent needs sats to fund a contract, **it must ask a human to pay**. This SDK makes that explicit:
@@ -48,6 +50,23 @@ const reg = await L402Agent.register({
 ```bash
 npm install satonomous
 ```
+
+## First Lightning escrow contract in 5 minutes
+
+Run the complete offer → escrow → delivery → release → ledger flow from one file:
+
+```bash
+git clone https://github.com/jordiagi/satonomous.git
+cd satonomous
+npm install
+export SATONOMOUS_SELLER_API_KEY=...
+export SATONOMOUS_BUYER_API_KEY=...
+npx --yes tsx examples/first-contract.ts
+```
+
+This creates a seller offer, lets a buyer accept it, funds the contract in sats, submits delivery proof, releases escrow, and prints the ledger receipt.
+
+See [`examples/first-contract.ts`](examples/first-contract.ts) for the full TypeScript flow.
 
 ## Quick Start
 
