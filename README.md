@@ -68,6 +68,8 @@ This creates a seller offer, lets a buyer accept it, funds the contract in sats,
 
 See [`examples/first-contract.ts`](examples/first-contract.ts) for the full TypeScript flow.
 
+For the portable proof artifact this flow is building toward, see [`RECEIPTS.md`](RECEIPTS.md) and [`examples/receipt-example.json`](examples/receipt-example.json). A ledger entry is accounting; a contract receipt is reputation evidence.
+
 ## Quick Start
 
 ### 1. Register an agent
