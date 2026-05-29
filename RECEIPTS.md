@@ -16,6 +16,7 @@ See [`examples/receipt-example.json`](examples/receipt-example.json).
 {
   "schema": "satonomous.contract-receipt/v0",
   "receipt_id": "receipt_...",
+  "body_hash": "sha256:...",
   "issued_at": "2026-05-21T15:02:15Z",
   "contract": {
     "id": "contract_...",
@@ -39,6 +40,16 @@ See [`examples/receipt-example.json`](examples/receipt-example.json).
     "payload_hash": "sha256:...",
     "submitted_at": "2026-05-21T14:58:00Z"
   },
+  "evidence_refs": [
+    {
+      "kind": "delivery",
+      "uri": "https://example.com/delivery/first-contract-summary",
+      "hash": "sha256:...",
+      "submitted_by": "tenant_seller_...",
+      "submitted_at": "2026-05-21T14:58:00Z",
+      "redaction_status": "none"
+    }
+  ],
   "settlement": {
     "outcome": "released",
     "released_at": "2026-05-21T15:02:00Z",
@@ -62,7 +73,8 @@ See [`examples/receipt-example.json`](examples/receipt-example.json).
 | Receipt field | Source | Notes |
 | --- | --- | --- |
 | `schema` | Static | Versioned as `satonomous.contract-receipt/v0`. Future incompatible changes should use a new schema version. |
-| `receipt_id` | Receipt generator | Stable receipt identifier. Phase 0 examples use a placeholder. |
+| `receipt_id` | Receipt generator | Stable receipt identifier derived from the deterministic body hash. |
+| `body_hash` | Receipt generator | `sha256:` hash over the canonical receipt body, excluding `receipt_id` and `body_hash`. |
 | `issued_at` | Receipt generator | Time the receipt object was produced, not necessarily the release time. |
 | `contract.id` | `Contract.id` | Primary contract identifier. |
 | `contract.offer_id` | `Contract.offer_id` | Offer accepted by the buyer. |
@@ -76,6 +88,7 @@ See [`examples/receipt-example.json`](examples/receipt-example.json).
 | `delivery_proof.url` | `Contract.delivery_proof` | URL or pointer submitted by the seller. |
 | `delivery_proof.payload_hash` | Hash of delivery payload | Prefer hashing payload details instead of publishing private proof data. |
 | `delivery_proof.submitted_at` | `Contract.completed_at` or delivery event time | Time delivery proof was submitted. |
+| `evidence_refs[]` | Receipt generator and optional verifier/dispute materials | Append-only references for delivery, dispute evidence, redacted alternates, hashes, or verifier outputs. Keep primary seller proof in `delivery_proof`. |
 | `settlement.outcome` | `Contract.status` | Compact result used by agents and social proof surfaces. |
 | `settlement.released_at` | `Contract.released_at` | Non-null when escrow was released to the seller. |
 | `settlement.disputed_at` | `Contract.disputed_at` | Non-null when the buyer disputed the delivery. |
@@ -98,10 +111,30 @@ Do not publish full delivery payloads by default. Use `delivery_proof.url` plus 
 
 Do not make receipts public automatically. Public receipt URLs are a later phase and should require explicit redaction rules.
 
+## SDK Usage
+
+The SDK exports both a high-level method and pure helpers:
+
+```typescript
+const receipt = await agent.getContractReceipt(contractId);
+const result = agent.verifyContractReceipt(receipt);
+```
+
+```typescript
+import { createContractReceipt, verifyContractReceipt } from 'satonomous';
+
+const receipt = createContractReceipt(contract, ledgerEntries);
+const result = verifyContractReceipt(receipt);
+```
+
+Verification returns `valid`, `codes`, `warnings`, `expected_receipt_id`, and `expected_body_hash`.
+Hard failures include hash/id mismatches, unsupported schema, or non-terminal contract status.
+Warnings include missing delivery proof, missing ledger references, or malformed evidence refs.
+
 ## Roadmap
 
-Phase 1 should add a `ContractReceipt` type and either `getContractReceipt(contractId)` or a pure `toContractReceipt(contract, ledgerEntries)` helper in the SDK.
+Phase 1 adds a `ContractReceipt` type, `createContractReceipt()`, `verifyContractReceipt()`, and `getContractReceipt(contractId)` in the SDK. This is implemented in `satonomous@0.3.2`.
 
-Phase 2 should add an MCP tool that returns compact human-readable receipt text plus the raw JSON.
+Phase 2 adds an MCP tool that returns compact human-readable receipt text plus the raw JSON. This is exposed as `l402_get_contract_receipt` in `satonomous-mcp@0.2.5`.
 
 Phase 3 may add an opt-in public receipt URL after privacy rules are explicit.

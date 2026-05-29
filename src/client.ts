@@ -11,7 +11,13 @@ import type {
   WithdrawResult,
   AgentRegistration,
   PaymentNeededCallback,
+  ListOffersParams,
+  TenantInfo,
+  TenantReputation,
+  ContractReceipt,
+  ContractReceiptVerificationResult,
 } from './types.js';
+import { createContractReceipt, verifyContractReceipt } from './receipts.js';
 
 export class L402Error extends Error {
   status: number;
@@ -44,14 +50,17 @@ export class L402Agent {
     this.paymentPollIntervalMs = options.paymentPollIntervalMs ?? 5_000;
   }
 
-  private async request<T>(method: string, path: string, body?: any): Promise<T> {
+  private async request<T>(method: string, path: string, body?: any, auth = true): Promise<T> {
     const url = `${this.apiUrl}${path}`;
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (auth) {
+      headers['X-L402-Key'] = this.apiKey;
+    }
     const options: RequestInit = {
       method,
-      headers: {
-        'X-L402-Key': this.apiKey,
-        'Content-Type': 'application/json',
-      },
+      headers,
     };
 
     if (body) {
@@ -76,6 +85,17 @@ export class L402Agent {
     }
 
     return res.json() as Promise<T>;
+  }
+
+  private buildQuery(params?: object): string {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params || {})) {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        query.append(key, String(value));
+      }
+    }
+    const encoded = query.toString();
+    return encoded ? `?${encoded}` : '';
   }
 
   // Static: register a new agent (no auth needed)
@@ -260,8 +280,27 @@ export class L402Agent {
     });
   }
 
-  async listOffers(): Promise<Offer[]> {
-    const result = await this.request<{ offers: Offer[] }>('GET', '/api/v1/offers');
+  async getTenant(): Promise<TenantInfo> {
+    return this.request('GET', '/api/v1/tenants/me');
+  }
+
+  async getReputation(tenantId?: string): Promise<TenantReputation> {
+    const id = tenantId ?? (await this.getTenant()).tenant_id;
+    return this.request('GET', `/api/v1/reputation/${encodeURIComponent(id)}`);
+  }
+
+  async listOffers(filters?: ListOffersParams): Promise<Offer[]> {
+    const result = await this.request<{ offers: Offer[] }>('GET', `/api/v1/offers${this.buildQuery(filters)}`);
+    return result.offers || [];
+  }
+
+  async browseOffers(filters?: ListOffersParams): Promise<Offer[]> {
+    const result = await this.request<{ offers: Offer[] }>(
+      'GET',
+      `/api/v1/offers${this.buildQuery(filters)}`,
+      undefined,
+      false
+    );
     return result.offers || [];
   }
 
@@ -323,5 +362,19 @@ export class L402Agent {
     if (offset) params.append('offset', String(offset));
     if (params.toString()) path += '?' + params.toString();
     return this.request('GET', path);
+  }
+
+  async getContractReceipt(contractId: string): Promise<ContractReceipt> {
+    const contract = await this.getContract(contractId);
+    const { entries } = await this.getLedger(100);
+    return createContractReceipt(contract, entries, {
+      links: {
+        quickstart: 'https://github.com/jordiagi/satonomous/blob/main/examples/first-contract.ts',
+      },
+    });
+  }
+
+  verifyContractReceipt(receipt: ContractReceipt): ContractReceiptVerificationResult {
+    return verifyContractReceipt(receipt);
   }
 }

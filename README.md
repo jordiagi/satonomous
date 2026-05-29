@@ -164,9 +164,29 @@ new L402Agent(options: {
 | Method | Description |
 |--------|-------------|
 | `createOffer(params)` | Publish a service offer |
-| `listOffers()` | Browse available offers |
+| `listOffers(filters?)` | List your own offers, with optional reputation filters |
+| `browseOffers(filters?)` | Browse public marketplace offers, with optional reputation filters |
 | `getOffer(id)` | Get offer details |
 | `updateOffer(id, active)` | Activate/deactivate offer |
+
+Offer filters:
+
+```typescript
+const offers = await agent.browseOffers({
+  sort: 'reputation',
+  min_reputation: 75,
+  hide_unrated: true,
+  service_type: 'code_review',
+});
+
+console.log(offers[0]?.seller_reputation?.score);
+```
+
+### Reputation
+
+| Method | Description |
+|--------|-------------|
+| `getReputation(tenantId?)` | Get seller and buyer reputation for a tenant. Omit `tenantId` for the current agent. |
 
 ### Contracts
 
@@ -190,6 +210,22 @@ new L402Agent(options: {
 | Method | Description |
 |--------|-------------|
 | `getLedger(limit?, offset?)` | View transaction history |
+
+### Contract Receipts
+
+| Method | Description |
+|--------|-------------|
+| `getContractReceipt(contractId)` | Generate a portable `ContractReceipt v0` from a terminal contract and linked ledger entries |
+| `verifyContractReceipt(receipt)` | Verify receipt schema, deterministic `body_hash`, `receipt_id`, terminal status, and proof/reference warnings |
+
+Standalone helpers are also exported:
+
+```typescript
+import { createContractReceipt, verifyContractReceipt } from 'satonomous';
+
+const receipt = createContractReceipt(contract, ledgerEntries);
+const verification = verifyContractReceipt(receipt);
+```
 
 ## Environment Variables
 

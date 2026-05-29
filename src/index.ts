@@ -25,10 +25,14 @@
  */
 
 export { L402Agent, L402Error } from './client.js';
+export { createContractReceipt, verifyContractReceipt } from './receipts.js';
 export type {
   L402AgentOptions,
   BalanceInfo,
   Offer,
+  OfferSellerReputation,
+  ListOffersParams,
+  OfferSort,
   CreateOfferParams,
   Contract,
   FundResult,
@@ -37,5 +41,17 @@ export type {
   LedgerEntry,
   WithdrawResult,
   AgentRegistration,
+  TenantInfo,
+  TenantReputation,
+  RoleReputation,
+  SellerReputationSummary,
+  BuyerReputationSummary,
+  ReputationLevel,
   PaymentNeededCallback,
+  ContractReceipt,
+  ContractReceiptEvidenceRef,
+  ContractReceiptOutcome,
+  ContractReceiptVerificationCode,
+  ContractReceiptVerificationResult,
+  CreateContractReceiptOptions,
 } from './types.js';

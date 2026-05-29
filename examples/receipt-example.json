@@ -1,6 +1,7 @@
 {
   "schema": "satonomous.contract-receipt/v0",
-  "receipt_id": "receipt_01jvvv8e6ke7b9kg2c1p9nd6sm",
+  "receipt_id": "cr_3cc6f0969c5d48eb0f7de91f94f874c6",
+  "body_hash": "sha256:3cc6f0969c5d48eb0f7de91f94f874c6914a764d411b9350ac73acdecfffa65b",
   "issued_at": "2026-05-21T15:02:15Z",
   "contract": {
     "id": "contract_01jvvv4j5krv4a72d6v6m6mkk7",
@@ -24,6 +25,16 @@
     "payload_hash": "sha256:fa27f93007e5a6fddf9f81d820d0057acba9479cf7c5cb2af1129389e558ba61",
     "submitted_at": "2026-05-21T14:58:00Z"
   },
+  "evidence_refs": [
+    {
+      "kind": "delivery",
+      "uri": "https://example.com/delivery/first-contract-summary",
+      "hash": "sha256:fa27f93007e5a6fddf9f81d820d0057acba9479cf7c5cb2af1129389e558ba61",
+      "submitted_by": "tenant_seller_01jvvtzvpme8p0fxsxk8mpay99",
+      "submitted_at": "2026-05-21T14:58:00Z",
+      "redaction_status": "none"
+    }
+  ],
   "settlement": {
     "outcome": "released",
     "released_at": "2026-05-21T15:02:00Z",
