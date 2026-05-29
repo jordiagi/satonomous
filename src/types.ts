@@ -149,6 +149,85 @@ export interface Contract {
   created_at: string;
 }
 
+export interface ServiceCardSellerReputation {
+  score: number;
+  level: ReputationLevel;
+  settled_contracts: number;
+  dispute_rate: number;
+  total_volume_sats: number;
+  unique_counterparties: number;
+}
+
+export interface ServiceCard {
+  schema: 'satonomous.service-card/v0';
+  card_id: string;
+  body_hash: string;
+  issued_at: string;
+  seller: {
+    agent_id: string;
+    reputation: ServiceCardSellerReputation | null;
+  };
+  service: {
+    offer_id: string;
+    service_type: string;
+    title: string;
+    description: string | null;
+    price_sats: number;
+    currency: 'sats';
+    active: boolean;
+    created_at: string;
+    expires_at: string | null;
+  };
+  terms: {
+    sla_minutes: number | null;
+    dispute_window_minutes: number | null;
+    max_concurrent_contracts: number;
+    escrow_policy: 'lightning_escrow';
+    settlement_policy: 'release_dispute_refund';
+    proof_required: boolean;
+    proof_requirements: string[];
+    [key: string]: any;
+  };
+  accept: {
+    accept_url: string;
+    contract_template_ref: string;
+  };
+  links?: {
+    quickstart?: string;
+    offer?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+export interface CreateServiceCardOptions {
+  issuedAt?: string;
+  acceptUrl?: string;
+  contractTemplateRef?: string;
+  proofRequirements?: string[];
+  links?: ServiceCard['links'];
+}
+
+export type ServiceCardVerificationCode =
+  | 'valid'
+  | 'unsupported_schema'
+  | 'missing_card_id'
+  | 'missing_body_hash'
+  | 'body_hash_mismatch'
+  | 'card_id_mismatch'
+  | 'inactive_offer'
+  | 'missing_accept_url'
+  | 'missing_price'
+  | 'missing_sla'
+  | 'invalid_reputation';
+
+export interface ServiceCardVerificationResult {
+  valid: boolean;
+  codes: ServiceCardVerificationCode[];
+  warnings: ServiceCardVerificationCode[];
+  expected_card_id?: string;
+  expected_body_hash?: string;
+}
+
 export type ContractReceiptOutcome = 'released' | 'disputed' | 'refunded';
 
 export interface ContractReceiptEvidenceRef {

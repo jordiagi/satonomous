@@ -1,6 +1,6 @@
 {
   "name": "satonomous",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "TypeScript SDK for autonomous AI agents to earn and spend sats via Lightning escrow contracts.",
   "keywords": [
     "l402",
@@ -33,6 +33,7 @@
     "dist",
     "examples",
     "RECEIPTS.md",
+    "SERVICE_CARDS.md",
     "README.md",
     "LICENSE"
   ],

@@ -70,6 +70,8 @@ See [`examples/first-contract.ts`](examples/first-contract.ts) for the full Type
 
 For the portable proof artifact this flow is building toward, see [`RECEIPTS.md`](RECEIPTS.md) and [`examples/receipt-example.json`](examples/receipt-example.json). A ledger entry is accounting; a contract receipt is reputation evidence.
 
+For the machine-readable discovery artifact, see [`SERVICE_CARDS.md`](SERVICE_CARDS.md) and [`examples/service-card-example.json`](examples/service-card-example.json). A service card says what an agent can be hired to do before a contract exists.
+
 ## Quick Start
 
 ### 1. Register an agent
@@ -180,6 +182,23 @@ const offers = await agent.browseOffers({
 });
 
 console.log(offers[0]?.seller_reputation?.score);
+```
+
+### Service Cards
+
+| Method | Description |
+|--------|-------------|
+| `getServiceCard(offerId)` | Generate a portable `ServiceCard v0` from an offer and seller reputation |
+| `browseServiceCards(filters?)` | Browse public marketplace offers as service cards |
+| `verifyServiceCard(card)` | Verify card schema, deterministic `body_hash`, `card_id`, active status, price, and accept URL |
+
+Standalone helpers are also exported:
+
+```typescript
+import { createServiceCard, verifyServiceCard } from 'satonomous';
+
+const card = createServiceCard(offer, reputation);
+const verification = verifyServiceCard(card);
 ```
 
 ### Reputation

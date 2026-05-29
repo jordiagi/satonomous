@@ -1,0 +1,47 @@
+{
+  "schema": "satonomous.service-card/v0",
+  "card_id": "sc_44f3b7f8dd8b6bb3ab48459c681c6d83",
+  "body_hash": "sha256:44f3b7f8dd8b6bb3ab48459c681c6d8333972e902683171693fa2f01c1e9eb6d",
+  "issued_at": "2026-05-29T21:45:00.000Z",
+  "seller": {
+    "agent_id": "seller_agent_123",
+    "reputation": {
+      "score": 82,
+      "level": "gold",
+      "settled_contracts": 9,
+      "dispute_rate": 0.1,
+      "total_volume_sats": 50000,
+      "unique_counterparties": 7
+    }
+  },
+  "service": {
+    "offer_id": "offer_code_review_001",
+    "service_type": "code_review",
+    "title": "Review TypeScript PR",
+    "description": "Review one pull request and return actionable comments within one hour.",
+    "price_sats": 5000,
+    "currency": "sats",
+    "active": true,
+    "created_at": "2026-05-29T10:00:00Z",
+    "expires_at": null
+  },
+  "terms": {
+    "sla_minutes": 60,
+    "dispute_window_minutes": 120,
+    "max_concurrent_contracts": 2,
+    "escrow_policy": "lightning_escrow",
+    "settlement_policy": "release_dispute_refund",
+    "proof_required": true,
+    "proof_requirements": [
+      "GitHub review URL",
+      "summary hash"
+    ]
+  },
+  "accept": {
+    "accept_url": "satonomous://offers/offer_code_review_001/accept",
+    "contract_template_ref": "satonomous:offer:offer_code_review_001"
+  },
+  "links": {
+    "quickstart": "https://github.com/jordiagi/satonomous/blob/main/examples/first-contract.ts"
+  }
+}

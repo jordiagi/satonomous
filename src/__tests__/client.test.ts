@@ -1,7 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { L402Agent, L402Error } from '../client.js';
 import { createContractReceipt, verifyContractReceipt } from '../receipts.js';
-import type { Contract, LedgerEntry } from '../types.js';
+import { createServiceCard, verifyServiceCard } from '../service-cards.js';
+import type { Contract, LedgerEntry, Offer } from '../types.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -93,6 +94,118 @@ describe('L402Agent', () => {
     expect(reputation.tenant_id).toBe('tenant-1');
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.com/api/v1/tenants/me');
     expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.com/api/v1/reputation/tenant-1');
+  });
+
+  it('creates and verifies deterministic service cards', () => {
+    const offer: Offer = {
+      id: 'offer-1',
+      seller_tenant_id: 'seller-1',
+      service_type: 'code_review',
+      title: 'Review TypeScript PR',
+      description: 'Review one pull request',
+      terms: {
+        sla_minutes: 60,
+        dispute_window_minutes: 120,
+        proof_requirements: ['GitHub review URL', 'summary hash'],
+      },
+      price_sats: 5000,
+      max_concurrent_contracts: 2,
+      active: 1,
+      created_at: '2026-05-29T10:00:00Z',
+      expires_at: null,
+      seller_reputation: {
+        score: 82,
+        level: 'gold',
+        completed_contracts: 10,
+        settled_contracts: 9,
+        dispute_rate: 0.1,
+        total_volume_sats: 50_000,
+        unique_counterparties: 7,
+      },
+    };
+
+    const card = createServiceCard(offer, null, { issuedAt: '2026-05-29T10:01:00Z' });
+    const sameCard = createServiceCard(offer, null, { issuedAt: '2026-05-29T10:01:00Z' });
+
+    expect(card.card_id).toBe(sameCard.card_id);
+    expect(card.body_hash).toMatch(/^sha256:/);
+    expect(card.service.price_sats).toBe(5000);
+    expect(card.terms.proof_requirements).toEqual(['GitHub review URL', 'summary hash']);
+    expect(card.accept.accept_url).toBe('satonomous://offers/offer-1/accept');
+    expect(verifyServiceCard(card)).toMatchObject({
+      valid: true,
+      codes: ['valid'],
+      warnings: [],
+    });
+  });
+
+  it('flags mutated service cards', () => {
+    const card = createServiceCard({
+      id: 'offer-2',
+      seller_tenant_id: 'seller-1',
+      service_type: 'research',
+      title: 'Summarize article',
+      description: null,
+      terms: {},
+      price_sats: 100,
+      max_concurrent_contracts: 1,
+      active: 1,
+      created_at: '2026-05-29T10:00:00Z',
+      expires_at: null,
+    }, null, { issuedAt: '2026-05-29T10:01:00Z' });
+    card.service.price_sats = 101;
+    card.terms.sla_minutes = null;
+
+    const result = verifyServiceCard(card);
+    expect(result.valid).toBe(false);
+    expect(result.codes).toContain('body_hash_mismatch');
+    expect(result.warnings).toContain('missing_sla');
+  });
+
+  it('fetches a generated service card from offer and reputation data', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 'offer-3',
+          seller_tenant_id: 'seller-1',
+          service_type: 'research',
+          title: 'Summarize article',
+          description: null,
+          terms: { sla_minutes: 30, dispute_window_minutes: 60 },
+          price_sats: 25,
+          max_concurrent_contracts: 1,
+          active: 1,
+          created_at: '2026-05-29T10:00:00Z',
+          expires_at: null,
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          tenant_id: 'seller-1',
+          seller: {
+            score: 90,
+            level: 'platinum',
+            summary: {
+              settled_contracts: 20,
+              dispute_rate: 0,
+              total_volume_sats: 100_000,
+              unique_counterparties: 15,
+            },
+          },
+          buyer: { score: 70, level: 'silver', summary: {} },
+        }),
+      } as Response);
+
+    const agent = new L402Agent({ apiKey: 'test-key', apiUrl: 'https://api.example.com' });
+    const card = await agent.getServiceCard('offer-3', { issuedAt: '2026-05-29T10:01:00Z' });
+
+    expect(card.service.offer_id).toBe('offer-3');
+    expect(card.seller.reputation?.score).toBe(90);
+    expect(card.accept.contract_template_ref).toBe('satonomous:offer:offer-3');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.com/api/v1/offers/offer-3');
+    expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.com/api/v1/reputation/seller-1');
   });
 
   it('creates and verifies deterministic contract receipts', () => {

@@ -26,6 +26,7 @@
 
 export { L402Agent, L402Error } from './client.js';
 export { createContractReceipt, verifyContractReceipt } from './receipts.js';
+export { createServiceCard, verifyServiceCard } from './service-cards.js';
 export type {
   L402AgentOptions,
   BalanceInfo,
@@ -54,4 +55,9 @@ export type {
   ContractReceiptVerificationCode,
   ContractReceiptVerificationResult,
   CreateContractReceiptOptions,
+  ServiceCard,
+  ServiceCardSellerReputation,
+  ServiceCardVerificationCode,
+  ServiceCardVerificationResult,
+  CreateServiceCardOptions,
 } from './types.js';

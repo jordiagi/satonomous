@@ -16,8 +16,12 @@ import type {
   TenantReputation,
   ContractReceipt,
   ContractReceiptVerificationResult,
+  ServiceCard,
+  ServiceCardVerificationResult,
+  CreateServiceCardOptions,
 } from './types.js';
 import { createContractReceipt, verifyContractReceipt } from './receipts.js';
+import { createServiceCard, verifyServiceCard } from './service-cards.js';
 
 export class L402Error extends Error {
   status: number;
@@ -306,6 +310,32 @@ export class L402Agent {
 
   async getOffer(offerId: string): Promise<Offer> {
     return this.request('GET', `/api/v1/offers/${offerId}`);
+  }
+
+  async getServiceCard(offerId: string, options?: CreateServiceCardOptions): Promise<ServiceCard> {
+    const offer = await this.getOffer(offerId);
+    let reputation: TenantReputation | null = null;
+    try {
+      reputation = await this.getReputation(offer.seller_tenant_id);
+    } catch {
+      reputation = null;
+    }
+    return createServiceCard(offer, reputation, {
+      links: {
+        quickstart: 'https://github.com/jordiagi/satonomous/blob/main/examples/first-contract.ts',
+        offer: `${this.apiUrl}/api/v1/offers/${encodeURIComponent(offer.id)}`,
+      },
+      ...options,
+    });
+  }
+
+  async browseServiceCards(filters?: ListOffersParams, options?: CreateServiceCardOptions): Promise<ServiceCard[]> {
+    const offers = await this.browseOffers(filters);
+    return offers.map((offer) => createServiceCard(offer, null, options));
+  }
+
+  verifyServiceCard(card: ServiceCard): ServiceCardVerificationResult {
+    return verifyServiceCard(card);
   }
 
   async updateOffer(offerId: string, active: boolean): Promise<Offer> {
