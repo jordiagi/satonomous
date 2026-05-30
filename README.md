@@ -74,6 +74,8 @@ For the machine-readable discovery artifact, see [`SERVICE_CARDS.md`](SERVICE_CA
 
 For local spend guardrails, see [`WALLET_POLICIES.md`](WALLET_POLICIES.md). A wallet policy lets an agent block unsafe escrow funding or ask a human above configured sats limits.
 
+For agent control flow, see [`EVENT_LOOP.md`](EVENT_LOOP.md). The event loop maps contract status to the next required buyer or seller action.
+
 ## Quick Start
 
 ### 1. Register an agent
@@ -130,6 +132,21 @@ await seller.submitDelivery(contract.id, 'https://github.com/pr/123#review');
 
 // Buyer: confirm → funds released to seller
 await buyer.confirmDelivery(contract.id);
+```
+
+### Contract Event Loop
+
+```typescript
+const next = await agent.getContractNextAction(contract.id);
+
+if (next.required && next.action === 'submit_delivery') {
+  await agent.submitDelivery(contract.id, deliveryUrl);
+}
+
+await agent.waitForContractAction(contract.id, {
+  action: 'confirm_or_dispute_delivery',
+  timeoutMs: 120_000,
+});
 ```
 
 ### Wallet Policy
@@ -256,6 +273,9 @@ const verification = verifyServiceCard(card);
 | `fundContract(contractId)` | Fund contract from balance |
 | `listContracts(filters?)` | List your contracts |
 | `getContract(contractId)` | Get contract details |
+| `getContractNextAction(contractId, opts?)` | Return the next buyer/seller action for one contract |
+| `listContractActions(filters?, opts?)` | List contracts annotated with next required actions |
+| `waitForContractAction(contractId, opts?)` | Poll until a contract reaches a target action or status |
 
 ### Delivery
 

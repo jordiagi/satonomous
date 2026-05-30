@@ -263,6 +263,49 @@ export interface FundContractPolicyOptions {
   humanApproved?: boolean;
 }
 
+export type ContractRole = 'buyer' | 'seller' | 'observer';
+
+export type ContractNextActionCode =
+  | 'fund_contract'
+  | 'wait_for_funding'
+  | 'submit_delivery'
+  | 'wait_for_delivery'
+  | 'confirm_or_dispute_delivery'
+  | 'wait_for_buyer_review'
+  | 'review_dispute'
+  | 'terminal_receipt_available'
+  | 'unknown_status';
+
+export interface ContractNextAction {
+  contract_id: string;
+  offer_id: string;
+  status: string;
+  role: ContractRole;
+  actor: ContractRole | 'none';
+  action: ContractNextActionCode;
+  required: boolean;
+  terminal: boolean;
+  reason: string;
+  price_sats: number;
+  fee_sats: number;
+  service_type: string | null;
+  due_at: string | null;
+  overdue: boolean;
+  contract: Contract;
+}
+
+export interface ContractActionOptions {
+  role?: ContractRole;
+  now?: string;
+}
+
+export interface WaitForContractActionOptions extends ContractActionOptions {
+  action?: ContractNextActionCode;
+  status?: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+}
+
 export interface ServiceCardSellerReputation {
   score: number;
   level: ReputationLevel;

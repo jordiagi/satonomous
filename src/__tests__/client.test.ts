@@ -3,6 +3,7 @@ import { L402Agent, L402Error } from '../client.js';
 import { createContractReceipt, verifyContractReceipt } from '../receipts.js';
 import { createServiceCard, verifyServiceCard } from '../service-cards.js';
 import { createWalletPolicy, evaluateWalletPolicy, verifyWalletPolicy } from '../wallet-policies.js';
+import { getContractNextAction } from '../contract-actions.js';
 import type { Contract, LedgerEntry, Offer } from '../types.js';
 
 afterEach(() => {
@@ -373,6 +374,107 @@ describe('L402Agent', () => {
     expect(result.contract.status).toBe('funded');
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.com/api/v1/contracts/contract-policy-2');
     expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.com/api/v1/contracts/contract-policy-2/fund');
+  });
+
+  it('classifies next contract actions by role and status', () => {
+    const funded: Contract = {
+      id: 'contract-loop-1',
+      offer_id: 'offer-loop-1',
+      buyer_tenant_id: 'buyer-1',
+      seller_tenant_id: 'seller-1',
+      terms_snapshot: { title: 'Review PR', service_type: 'code_review', sla_minutes: 30 },
+      price_sats: 500,
+      fee_sats: 5,
+      status: 'funded',
+      delivery_proof: {},
+      dispute_reason: null,
+      accepted_at: '2026-05-30T10:00:00Z',
+      funded_at: '2026-05-30T10:05:00Z',
+      completed_at: null,
+      released_at: null,
+      disputed_at: null,
+      created_at: '2026-05-30T10:00:00Z',
+    };
+
+    const sellerAction = getContractNextAction(funded, {
+      role: 'seller',
+      now: '2026-05-30T10:10:00Z',
+    });
+    expect(sellerAction).toMatchObject({
+      action: 'submit_delivery',
+      actor: 'seller',
+      required: true,
+      due_at: '2026-05-30T10:35:00.000Z',
+      overdue: false,
+    });
+
+    const buyerAction = getContractNextAction(funded, {
+      role: 'buyer',
+      now: '2026-05-30T10:40:00Z',
+    });
+    expect(buyerAction).toMatchObject({
+      action: 'wait_for_delivery',
+      actor: 'seller',
+      required: false,
+      overdue: true,
+    });
+  });
+
+  it('lists and waits for contract actions from gateway state', async () => {
+    const accepted = {
+      id: 'contract-loop-2',
+      offer_id: 'offer-loop-2',
+      buyer_tenant_id: 'buyer-1',
+      seller_tenant_id: 'seller-1',
+      terms_snapshot: { title: 'Research', service_type: 'research' },
+      price_sats: 25,
+      fee_sats: 1,
+      status: 'accepted',
+      delivery_proof: {},
+      dispute_reason: null,
+      accepted_at: '2026-05-30T10:00:00Z',
+      funded_at: null,
+      completed_at: null,
+      released_at: null,
+      disputed_at: null,
+      created_at: '2026-05-30T10:00:00Z',
+    };
+    const completed = {
+      ...accepted,
+      status: 'completed',
+      completed_at: '2026-05-30T10:30:00Z',
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ contracts: [accepted] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => accepted,
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => completed,
+      } as Response);
+
+    const agent = new L402Agent({ apiKey: 'test-key', apiUrl: 'https://api.example.com' });
+    const actions = await agent.listContractActions(undefined, { role: 'buyer' });
+    expect(actions[0]).toMatchObject({
+      action: 'fund_contract',
+      required: true,
+    });
+
+    const next = await agent.waitForContractAction('contract-loop-2', {
+      role: 'buyer',
+      action: 'confirm_or_dispute_delivery',
+      pollIntervalMs: 1,
+      timeoutMs: 100,
+    });
+    expect(next.status).toBe('completed');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.com/api/v1/contracts');
+    expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.com/api/v1/contracts/contract-loop-2');
+    expect(fetchMock.mock.calls[2][0]).toBe('https://api.example.com/api/v1/contracts/contract-loop-2');
   });
 
   it('creates and verifies deterministic contract receipts', () => {

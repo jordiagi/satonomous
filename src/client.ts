@@ -24,10 +24,15 @@ import type {
   WalletPolicyDecision,
   WalletPolicySpendRequest,
   FundContractPolicyOptions,
+  ContractActionOptions,
+  ContractNextAction,
+  ContractRole,
+  WaitForContractActionOptions,
 } from './types.js';
 import { createContractReceipt, verifyContractReceipt } from './receipts.js';
 import { createServiceCard, verifyServiceCard } from './service-cards.js';
 import { evaluateWalletPolicy } from './wallet-policies.js';
+import { getContractNextAction } from './contract-actions.js';
 
 export class L402Error extends Error {
   status: number;
@@ -394,6 +399,68 @@ export class L402Agent {
 
   async getContract(contractId: string): Promise<Contract> {
     return this.request('GET', `/api/v1/contracts/${contractId}`);
+  }
+
+  private async inferRole(contract: Contract): Promise<ContractRole> {
+    try {
+      const tenant = await this.getTenant();
+      if (tenant.tenant_id === contract.buyer_tenant_id) return 'buyer';
+      if (tenant.tenant_id === contract.seller_tenant_id) return 'seller';
+    } catch {
+      // Fall through to observer when tenant lookup is unavailable.
+    }
+    return 'observer';
+  }
+
+  async getContractNextAction(
+    contractId: string,
+    options: ContractActionOptions = {}
+  ): Promise<ContractNextAction> {
+    const contract = await this.getContract(contractId);
+    const role = options.role ?? (await this.inferRole(contract));
+    return getContractNextAction(contract, { ...options, role });
+  }
+
+  async listContractActions(
+    filters?: { role?: 'buyer' | 'seller'; status?: string },
+    options: ContractActionOptions = {}
+  ): Promise<ContractNextAction[]> {
+    const contracts = await this.listContracts(filters);
+    return Promise.all(
+      contracts.map(async (contract) => {
+        const role = options.role ?? (await this.inferRole(contract));
+        return getContractNextAction(contract, { ...options, role });
+      })
+    );
+  }
+
+  async waitForContractAction(
+    contractId: string,
+    options: WaitForContractActionOptions = {}
+  ): Promise<ContractNextAction> {
+    const timeoutMs = options.timeoutMs ?? 60_000;
+    const pollIntervalMs = options.pollIntervalMs ?? 5_000;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() <= deadline) {
+      const next = await this.getContractNextAction(contractId, options);
+      if (
+        (!options.action || next.action === options.action) &&
+        (!options.status || next.status === options.status)
+      ) {
+        return next;
+      }
+      if (next.terminal && !options.action && !options.status) return next;
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    throw new L402Error(
+      `Timed out waiting for contract ${contractId}` +
+      `${options.action ? ` action ${options.action}` : ''}` +
+      `${options.status ? ` status ${options.status}` : ''}`,
+      408,
+      'CONTRACT_WATCH_TIMEOUT'
+    );
   }
 
   evaluateWalletPolicy(
