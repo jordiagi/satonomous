@@ -19,9 +19,15 @@ import type {
   ServiceCard,
   ServiceCardVerificationResult,
   CreateServiceCardOptions,
+  WalletPolicy,
+  WalletPolicyContext,
+  WalletPolicyDecision,
+  WalletPolicySpendRequest,
+  FundContractPolicyOptions,
 } from './types.js';
 import { createContractReceipt, verifyContractReceipt } from './receipts.js';
 import { createServiceCard, verifyServiceCard } from './service-cards.js';
+import { evaluateWalletPolicy } from './wallet-policies.js';
 
 export class L402Error extends Error {
   status: number;
@@ -42,6 +48,8 @@ export class L402Agent {
   private onPaymentNeeded?: PaymentNeededCallback;
   private paymentTimeoutMs: number;
   private paymentPollIntervalMs: number;
+  private walletPolicy?: WalletPolicy;
+  private onPolicyApprovalNeeded?: L402AgentOptions['onPolicyApprovalNeeded'];
 
   constructor(options: L402AgentOptions) {
     if (!options.apiKey) {
@@ -52,6 +60,8 @@ export class L402Agent {
     this.onPaymentNeeded = options.onPaymentNeeded;
     this.paymentTimeoutMs = options.paymentTimeoutMs ?? 300_000;
     this.paymentPollIntervalMs = options.paymentPollIntervalMs ?? 5_000;
+    this.walletPolicy = options.walletPolicy;
+    this.onPolicyApprovalNeeded = options.onPolicyApprovalNeeded;
   }
 
   private async request<T>(method: string, path: string, body?: any, auth = true): Promise<T> {
@@ -347,7 +357,28 @@ export class L402Agent {
     return this.request('POST', '/api/v1/contracts', { offer_id: offerId });
   }
 
-  async fundContract(contractId: string): Promise<FundResult> {
+  async fundContract(contractId: string, options: FundContractPolicyOptions = {}): Promise<FundResult> {
+    const policy = options.policy ?? this.walletPolicy;
+    if (policy) {
+      const decision = await this.evaluateContractFunding(contractId, { ...options, policy });
+      if (decision.decision === 'deny') {
+        throw new L402Error(
+          `WalletPolicy denied funding ${contractId}: ${decision.reasons.join('; ')}`,
+          403,
+          'WALLET_POLICY_DENIED'
+        );
+      }
+      if (decision.decision === 'ask_human' && !options.humanApproved) {
+        const approved = await this.onPolicyApprovalNeeded?.(decision);
+        if (approved !== true) {
+          throw new L402Error(
+            `WalletPolicy requires human approval for ${contractId}: ${decision.reasons.join('; ')}`,
+            402,
+            'WALLET_POLICY_APPROVAL_REQUIRED'
+          );
+        }
+      }
+    }
     return this.request('POST', `/api/v1/contracts/${contractId}/fund`, {});
   }
 
@@ -363,6 +394,44 @@ export class L402Agent {
 
   async getContract(contractId: string): Promise<Contract> {
     return this.request('GET', `/api/v1/contracts/${contractId}`);
+  }
+
+  evaluateWalletPolicy(
+    policy: WalletPolicy,
+    request: WalletPolicySpendRequest,
+    context?: WalletPolicyContext
+  ): WalletPolicyDecision {
+    return evaluateWalletPolicy(policy, request, context);
+  }
+
+  async evaluateContractFunding(
+    contractId: string,
+    options: FundContractPolicyOptions = {}
+  ): Promise<WalletPolicyDecision> {
+    const policy = options.policy ?? this.walletPolicy;
+    if (!policy) {
+      throw new Error('No WalletPolicy configured. Pass options.policy or set walletPolicy in the constructor.');
+    }
+
+    const contract = await this.getContract(contractId);
+    const terms = contract.terms_snapshot && typeof contract.terms_snapshot === 'object'
+      ? contract.terms_snapshot
+      : {};
+    const amount = contract.price_sats + contract.fee_sats;
+    return evaluateWalletPolicy(
+      policy,
+      {
+        amount_sats: amount,
+        price_sats: contract.price_sats,
+        fee_sats: contract.fee_sats,
+        counterparty_tenant_id: contract.seller_tenant_id,
+        service_type: typeof terms.service_type === 'string' ? terms.service_type : null,
+        offer_id: contract.offer_id,
+        contract_id: contract.id,
+        description: typeof terms.title === 'string' ? terms.title : undefined,
+      },
+      options.context
+    );
   }
 
   // Delivery

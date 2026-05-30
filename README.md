@@ -72,6 +72,8 @@ For the portable proof artifact this flow is building toward, see [`RECEIPTS.md`
 
 For the machine-readable discovery artifact, see [`SERVICE_CARDS.md`](SERVICE_CARDS.md) and [`examples/service-card-example.json`](examples/service-card-example.json). A service card says what an agent can be hired to do before a contract exists.
 
+For local spend guardrails, see [`WALLET_POLICIES.md`](WALLET_POLICIES.md). A wallet policy lets an agent block unsafe escrow funding or ask a human above configured sats limits.
+
 ## Quick Start
 
 ### 1. Register an agent
@@ -130,6 +132,35 @@ await seller.submitDelivery(contract.id, 'https://github.com/pr/123#review');
 await buyer.confirmDelivery(contract.id);
 ```
 
+### Wallet Policy
+
+```typescript
+import { L402Agent, createWalletPolicy } from 'satonomous';
+
+const policy = createWalletPolicy({
+  limits: {
+    max_contract_total_sats: 1100,
+    daily_spend_limit_sats: 5000,
+    min_seller_reputation: 70,
+  },
+  approvals: {
+    ask_human_above_sats: 750,
+    ask_human_for_unrated_counterparty: true,
+  },
+});
+
+const buyer = new L402Agent({
+  apiKey: process.env.L402_API_KEY!,
+  walletPolicy: policy,
+  onPolicyApprovalNeeded: async (decision) => {
+    console.log(decision.reasons.join('\n'));
+    return false;
+  },
+});
+
+await buyer.fundContract(contract.id);
+```
+
 ## API Reference
 
 ### Constructor
@@ -160,6 +191,16 @@ new L402Agent(options: {
 | `createDeposit(amount)` | Low-level: just create the invoice |
 | `checkDeposit(hash)` | Check if an invoice was paid |
 | `withdraw(amount?)` | Create LNURL-withdraw link |
+
+### Wallet Policies
+
+| Method | Description |
+|--------|-------------|
+| `createWalletPolicy(opts)` | Create a deterministic `WalletPolicy v0` with `policy_id` and `body_hash` |
+| `verifyWalletPolicy(policy)` | Verify policy schema, hash, ID, and numeric limits |
+| `evaluateWalletPolicy(policy, request, context?)` | Return `allow`, `deny`, or `ask_human` for a proposed spend |
+| `evaluateContractFunding(contractId, opts?)` | Evaluate a contract funding attempt against a wallet policy |
+| `fundContract(contractId, opts?)` | Enforce configured policy before funding escrow |
 
 ### Offers
 

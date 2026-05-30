@@ -1,6 +1,7 @@
 export interface L402AgentOptions {
   apiKey: string;
   apiUrl?: string;  // default: https://l402gw.nosaltres2.info
+  walletPolicy?: WalletPolicy;
 
   /**
    * Called when the agent needs a Lightning invoice paid.
@@ -27,6 +28,12 @@ export interface L402AgentOptions {
    * Default: 5_000 (5 seconds).
    */
   paymentPollIntervalMs?: number;
+
+  /**
+   * Called when walletPolicy returns `ask_human`.
+   * Return true to approve the spend; return false/void to block it.
+   */
+  onPolicyApprovalNeeded?: (decision: WalletPolicyDecision) => Promise<boolean | void> | boolean | void;
 }
 
 export interface BalanceInfo {
@@ -147,6 +154,113 @@ export interface Contract {
   released_at: string | null;
   disputed_at: string | null;
   created_at: string;
+}
+
+export interface WalletPolicy {
+  schema: 'satonomous.wallet-policy/v0';
+  policy_id: string;
+  body_hash: string;
+  issued_at: string;
+  agent_id?: string;
+  limits: {
+    max_contract_price_sats?: number;
+    max_contract_total_sats?: number;
+    daily_spend_limit_sats?: number;
+    max_spend_per_counterparty_sats?: number;
+    min_seller_reputation?: number;
+  };
+  approvals: {
+    ask_human_above_sats?: number;
+    ask_human_for_unrated_counterparty?: boolean;
+  };
+  allowlists?: {
+    service_types?: string[];
+    counterparties?: string[];
+  };
+  denylists?: {
+    service_types?: string[];
+    counterparties?: string[];
+  };
+  expires_at?: string | null;
+  notes?: string;
+}
+
+export interface CreateWalletPolicyOptions {
+  issuedAt?: string;
+  agentId?: string;
+  limits?: WalletPolicy['limits'];
+  approvals?: WalletPolicy['approvals'];
+  allowlists?: WalletPolicy['allowlists'];
+  denylists?: WalletPolicy['denylists'];
+  expiresAt?: string | null;
+  notes?: string;
+}
+
+export type WalletPolicyVerificationCode =
+  | 'valid'
+  | 'unsupported_schema'
+  | 'missing_policy_id'
+  | 'missing_body_hash'
+  | 'body_hash_mismatch'
+  | 'policy_id_mismatch'
+  | 'invalid_limit'
+  | 'invalid_reputation_threshold';
+
+export interface WalletPolicyVerificationResult {
+  valid: boolean;
+  codes: WalletPolicyVerificationCode[];
+  expected_policy_id?: string;
+  expected_body_hash?: string;
+}
+
+export interface WalletPolicySpendRequest {
+  amount_sats: number;
+  price_sats?: number;
+  fee_sats?: number;
+  counterparty_tenant_id?: string;
+  service_type?: string | null;
+  offer_id?: string;
+  contract_id?: string;
+  description?: string;
+}
+
+export interface WalletPolicyContext {
+  daily_spent_sats?: number;
+  counterparty_spent_sats?: number;
+  seller_reputation_score?: number | null;
+  now?: string;
+}
+
+export type WalletPolicyDecisionKind = 'allow' | 'deny' | 'ask_human';
+
+export type WalletPolicyDecisionCode =
+  | 'allowed'
+  | 'invalid_policy'
+  | 'deny_policy_expired'
+  | 'deny_amount_exceeds_contract_price_limit'
+  | 'deny_amount_exceeds_contract_total_limit'
+  | 'deny_daily_spend_limit'
+  | 'deny_counterparty_spend_limit'
+  | 'deny_counterparty_denied'
+  | 'deny_counterparty_not_allowed'
+  | 'deny_service_type_denied'
+  | 'deny_service_type_not_allowed'
+  | 'deny_min_seller_reputation'
+  | 'ask_human_amount_above_threshold'
+  | 'ask_human_unrated_counterparty';
+
+export interface WalletPolicyDecision {
+  decision: WalletPolicyDecisionKind;
+  codes: WalletPolicyDecisionCode[];
+  reasons: string[];
+  amount_sats: number;
+  policy_id: string;
+}
+
+export interface FundContractPolicyOptions {
+  policy?: WalletPolicy;
+  context?: WalletPolicyContext;
+  humanApproved?: boolean;
 }
 
 export interface ServiceCardSellerReputation {

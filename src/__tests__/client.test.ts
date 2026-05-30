@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { L402Agent, L402Error } from '../client.js';
 import { createContractReceipt, verifyContractReceipt } from '../receipts.js';
 import { createServiceCard, verifyServiceCard } from '../service-cards.js';
+import { createWalletPolicy, evaluateWalletPolicy, verifyWalletPolicy } from '../wallet-policies.js';
 import type { Contract, LedgerEntry, Offer } from '../types.js';
 
 afterEach(() => {
@@ -206,6 +207,172 @@ describe('L402Agent', () => {
     expect(card.accept.contract_template_ref).toBe('satonomous:offer:offer-3');
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.com/api/v1/offers/offer-3');
     expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.com/api/v1/reputation/seller-1');
+  });
+
+  it('creates and evaluates deterministic wallet policies', () => {
+    const policy = createWalletPolicy({
+      issuedAt: '2026-05-30T10:00:00Z',
+      limits: {
+        max_contract_price_sats: 1_000,
+        max_contract_total_sats: 1_100,
+        daily_spend_limit_sats: 2_000,
+        min_seller_reputation: 70,
+      },
+      approvals: {
+        ask_human_above_sats: 750,
+        ask_human_for_unrated_counterparty: true,
+      },
+      allowlists: {
+        service_types: ['code_review'],
+      },
+    });
+    const samePolicy = createWalletPolicy({
+      issuedAt: '2026-05-30T10:00:00Z',
+      limits: {
+        max_contract_price_sats: 1_000,
+        max_contract_total_sats: 1_100,
+        daily_spend_limit_sats: 2_000,
+        min_seller_reputation: 70,
+      },
+      approvals: {
+        ask_human_above_sats: 750,
+        ask_human_for_unrated_counterparty: true,
+      },
+      allowlists: {
+        service_types: ['code_review'],
+      },
+    });
+
+    expect(policy.policy_id).toBe(samePolicy.policy_id);
+    expect(policy.body_hash).toMatch(/^sha256:/);
+    expect(verifyWalletPolicy(policy)).toMatchObject({
+      valid: true,
+      codes: ['valid'],
+    });
+
+    const ask = evaluateWalletPolicy(
+      policy,
+      {
+        amount_sats: 900,
+        price_sats: 850,
+        fee_sats: 50,
+        counterparty_tenant_id: 'seller-1',
+        service_type: 'code_review',
+      },
+      {
+        daily_spent_sats: 100,
+        seller_reputation_score: 90,
+      }
+    );
+    expect(ask.decision).toBe('ask_human');
+    expect(ask.codes).toContain('ask_human_amount_above_threshold');
+
+    const denied = evaluateWalletPolicy(
+      policy,
+      {
+        amount_sats: 1_200,
+        price_sats: 1_150,
+        fee_sats: 50,
+        counterparty_tenant_id: 'seller-1',
+        service_type: 'research',
+      },
+      {
+        daily_spent_sats: 1_000,
+        seller_reputation_score: 60,
+      }
+    );
+    expect(denied.decision).toBe('deny');
+    expect(denied.codes).toContain('deny_amount_exceeds_contract_price_limit');
+    expect(denied.codes).toContain('deny_service_type_not_allowed');
+    expect(denied.codes).toContain('deny_min_seller_reputation');
+  });
+
+  it('enforces wallet policy before funding a contract', async () => {
+    const policy = createWalletPolicy({
+      issuedAt: '2026-05-30T10:00:00Z',
+      limits: {
+        max_contract_total_sats: 100,
+      },
+    });
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'contract-policy-1',
+        offer_id: 'offer-policy-1',
+        buyer_tenant_id: 'buyer-1',
+        seller_tenant_id: 'seller-1',
+        terms_snapshot: { title: 'Large job', service_type: 'research' },
+        price_sats: 150,
+        fee_sats: 1,
+        status: 'accepted',
+        delivery_proof: {},
+        dispute_reason: null,
+        accepted_at: '2026-05-30T10:00:00Z',
+        funded_at: null,
+        completed_at: null,
+        released_at: null,
+        disputed_at: null,
+        created_at: '2026-05-30T10:00:00Z',
+      }),
+    } as Response);
+
+    const agent = new L402Agent({ apiKey: 'test-key', apiUrl: 'https://api.example.com', walletPolicy: policy });
+    await expect(agent.fundContract('contract-policy-1')).rejects.toMatchObject({
+      code: 'WALLET_POLICY_DENIED',
+    });
+  });
+
+  it('requires approval for wallet policy ask-human decisions', async () => {
+    const policy = createWalletPolicy({
+      issuedAt: '2026-05-30T10:00:00Z',
+      approvals: {
+        ask_human_above_sats: 100,
+      },
+    });
+    const contract = {
+      id: 'contract-policy-2',
+      offer_id: 'offer-policy-2',
+      buyer_tenant_id: 'buyer-1',
+      seller_tenant_id: 'seller-1',
+      terms_snapshot: { title: 'Medium job', service_type: 'research' },
+      price_sats: 150,
+      fee_sats: 1,
+      status: 'accepted',
+      delivery_proof: {},
+      dispute_reason: null,
+      accepted_at: '2026-05-30T10:00:00Z',
+      funded_at: null,
+      completed_at: null,
+      released_at: null,
+      disputed_at: null,
+      created_at: '2026-05-30T10:00:00Z',
+    };
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => contract,
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          contract: { ...contract, status: 'funded' },
+          message: 'funded',
+        }),
+      } as Response);
+
+    const agent = new L402Agent({
+      apiKey: 'test-key',
+      apiUrl: 'https://api.example.com',
+      walletPolicy: policy,
+      onPolicyApprovalNeeded: () => true,
+    });
+    const result = await agent.fundContract('contract-policy-2');
+
+    expect(result.contract.status).toBe('funded');
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.com/api/v1/contracts/contract-policy-2');
+    expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.com/api/v1/contracts/contract-policy-2/fund');
   });
 
   it('creates and verifies deterministic contract receipts', () => {

@@ -27,6 +27,7 @@
 export { L402Agent, L402Error } from './client.js';
 export { createContractReceipt, verifyContractReceipt } from './receipts.js';
 export { createServiceCard, verifyServiceCard } from './service-cards.js';
+export { createWalletPolicy, evaluateWalletPolicy, verifyWalletPolicy } from './wallet-policies.js';
 export type {
   L402AgentOptions,
   BalanceInfo,
@@ -60,4 +61,14 @@ export type {
   ServiceCardVerificationCode,
   ServiceCardVerificationResult,
   CreateServiceCardOptions,
+  WalletPolicy,
+  CreateWalletPolicyOptions,
+  WalletPolicyVerificationCode,
+  WalletPolicyVerificationResult,
+  WalletPolicySpendRequest,
+  WalletPolicyContext,
+  WalletPolicyDecisionKind,
+  WalletPolicyDecisionCode,
+  WalletPolicyDecision,
+  FundContractPolicyOptions,
 } from './types.js';
