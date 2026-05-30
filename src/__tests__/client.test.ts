@@ -2,9 +2,10 @@ import { afterEach, describe, it, expect, vi } from 'vitest';
 import { L402Agent, L402Error } from '../client.js';
 import { createContractReceipt, verifyContractReceipt } from '../receipts.js';
 import { createServiceCard, verifyServiceCard } from '../service-cards.js';
+import { createTokenServiceCard, verifyTokenServiceCard } from '../token-service-cards.js';
 import { createWalletPolicy, evaluateWalletPolicy, verifyWalletPolicy } from '../wallet-policies.js';
 import { getContractNextAction } from '../contract-actions.js';
-import type { Contract, LedgerEntry, Offer } from '../types.js';
+import type { Contract, CreateTokenServiceCardOptions, LedgerEntry, Offer } from '../types.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -208,6 +209,198 @@ describe('L402Agent', () => {
     expect(card.accept.contract_template_ref).toBe('satonomous:offer:offer-3');
     expect(fetchMock.mock.calls[0][0]).toBe('https://api.example.com/api/v1/offers/offer-3');
     expect(fetchMock.mock.calls[1][0]).toBe('https://api.example.com/api/v1/reputation/seller-1');
+  });
+
+  it('creates and verifies deterministic token service cards', () => {
+    const options: CreateTokenServiceCardOptions = {
+      issuedAt: '2026-05-30T22:00:00.000Z',
+      seller: {
+        agent_id: 'seller_agent_123',
+        payout: { lightning_address: 'seller@example.com' },
+        reputation: {
+          score: 82,
+          level: 'gold',
+          settled_contracts: 9,
+          dispute_rate: 0.1,
+          total_volume_sats: 50_000,
+          unique_counterparties: 7,
+        },
+        trust: { tier: 'verified', policy_flags: [] },
+      },
+      service: {
+        service_type: 'llm_inference',
+        title: 'Discounted coding-model inference',
+        description: 'OpenAI-compatible chat completions served through prepaid Satonomous escrow.',
+        active: true,
+        created_at: '2026-05-30T22:00:00.000Z',
+        expires_at: null,
+      },
+      inference: {
+        api: 'openai-compatible',
+        endpoint: 'https://seller.example.com/v1',
+        models: [
+          {
+            id: 'seller/coding-large',
+            display_name: 'Coding Large',
+            max_context_tokens: 128_000,
+            max_output_tokens: 8192,
+            modalities: ['text', 'tool_call'],
+          },
+        ],
+        supports: {
+          chat_completions: true,
+          streaming: true,
+          tools: true,
+          json_mode: true,
+        },
+        provider: {
+          type: 'hosted',
+          name: 'seller-operated gateway',
+          disclosure: 'class',
+          authorization_basis: 'authorized_resale',
+          seller_attests_authorized: true,
+          attestation:
+            'Seller attests it is authorized to provide this inference service and is not sharing raw provider credentials.',
+        },
+      },
+      pricing: {
+        currency: 'sats',
+        unit: 'per_1k_tokens',
+        input_sats: 2,
+        output_sats: 8,
+        request_minimum_sats: 1,
+        minimum_contract_sats: 100,
+        max_contract_sats: 10_000,
+        quote_ttl_seconds: 60,
+        discount: {
+          reference_provider: 'public-retail',
+          min_discount_pct: 50,
+        },
+      },
+      limits: {
+        max_context_tokens: 128_000,
+        max_output_tokens: 8192,
+        max_requests_per_contract: 50,
+        max_requests_per_minute: 6,
+        max_concurrent_requests: 2,
+        expires_after_minutes: 120,
+      },
+      metering: {
+        method: 'gateway_verified',
+        token_counter: 'gateway',
+        dry_run_quote: true,
+      },
+      privacy: {
+        retention: 'hash_only',
+        log_prompts: false,
+        log_completions: false,
+        training_use: false,
+        public_receipts: 'hash_only',
+      },
+      settlement: {
+        dispute_window_minutes: 120,
+        refund_unused_sats: true,
+        partial_settlement: true,
+      },
+      accept: {
+        accept_url: 'satonomous://token-services/seller-coding-large/accept',
+        contract_template_ref: 'satonomous:token-service:seller-coding-large',
+      },
+      links: {
+        docs: 'https://github.com/jordiagi/satonomous/blob/main/TOKEN_SERVICE_CARDS.md',
+        quickstart: 'https://github.com/jordiagi/satonomous-mcp',
+      },
+    };
+
+    const card = createTokenServiceCard(options);
+    const sameCard = createTokenServiceCard(options);
+
+    expect(card.card_id).toBe(sameCard.card_id);
+    expect(card.card_id).toMatch(/^tsc_/);
+    expect(card.body_hash).toMatch(/^sha256:/);
+    expect(card.inference.models[0].id).toBe('seller/coding-large');
+    expect(card.pricing.max_contract_sats).toBe(10_000);
+    expect(card.metering.usage_receipt_schema).toBe('satonomous.token-usage-receipt/v0');
+    expect(card.metering.idempotency).toBe('request_id');
+    expect(verifyTokenServiceCard(card)).toMatchObject({
+      valid: true,
+      codes: ['valid'],
+      warnings: [],
+    });
+  });
+
+  it('rejects unsafe token service cards', () => {
+    const card = createTokenServiceCard({
+      issuedAt: '2026-05-30T22:00:00.000Z',
+      seller: {
+        agent_id: 'seller_agent_123',
+        reputation: null,
+        trust: { tier: 'anonymous', policy_flags: ['raw_api_key_resale'] },
+      },
+      service: {
+        service_type: 'llm_inference',
+        title: 'Cheap tokens',
+        description: null,
+        active: true,
+        created_at: '2026-05-30T22:00:00.000Z',
+        expires_at: null,
+      },
+      inference: {
+        api: 'openai-compatible',
+        models: [],
+        provider: {
+          type: 'unknown',
+          disclosure: 'undisclosed',
+          authorization_basis: 'prohibited_risk',
+          seller_attests_authorized: false,
+        },
+      },
+      pricing: {
+        currency: 'sats',
+        unit: 'per_1k_tokens',
+        input_sats: 0,
+        output_sats: 0,
+        max_contract_sats: 0,
+      },
+      limits: {
+        max_context_tokens: 0,
+        max_output_tokens: 0,
+      },
+      metering: {
+        method: 'seller_signed_usage',
+        token_counter: 'custom',
+        dry_run_quote: false,
+      },
+      privacy: {
+        retention: 'full',
+        log_prompts: true,
+        log_completions: true,
+        training_use: true,
+        public_receipts: 'private',
+      },
+      settlement: {
+        dispute_window_minutes: 0,
+        refund_unused_sats: false,
+        partial_settlement: false,
+      },
+      accept: {
+        accept_url: '',
+        contract_template_ref: 'satonomous:token-service:unsafe',
+      },
+    });
+
+    const result = verifyTokenServiceCard(card);
+    expect(result.valid).toBe(false);
+    expect(result.codes).toContain('missing_model');
+    expect(result.codes).toContain('invalid_price');
+    expect(result.codes).toContain('missing_budget_cap');
+    expect(result.codes).toContain('missing_accept_url');
+    expect(result.codes).toContain('missing_authorization_attestation');
+    expect(result.codes).toContain('prohibited_resale_risk');
+    expect(result.codes).toContain('raw_credential_resale');
+    expect(result.warnings).toContain('undisclosed_provider');
+    expect(result.warnings).toContain('missing_reputation');
+    expect(result.warnings).toContain('prompt_logging_enabled');
   });
 
   it('creates and evaluates deterministic wallet policies', () => {

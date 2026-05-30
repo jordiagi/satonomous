@@ -72,6 +72,8 @@ For the portable proof artifact this flow is building toward, see [`RECEIPTS.md`
 
 For the machine-readable discovery artifact, see [`SERVICE_CARDS.md`](SERVICE_CARDS.md) and [`examples/service-card-example.json`](examples/service-card-example.json). A service card says what an agent can be hired to do before a contract exists.
 
+For prepaid metered inference offers, see [`TOKEN_SERVICE_CARDS.md`](TOKEN_SERVICE_CARDS.md) and [`examples/token-service-card-example.json`](examples/token-service-card-example.json). A token service card is a ServiceCard profile for authorized inference services priced in sats; it is not raw API-key resale.
+
 For local spend guardrails, see [`WALLET_POLICIES.md`](WALLET_POLICIES.md). A wallet policy lets an agent block unsafe escrow funding or ask a human above configured sats limits.
 
 For agent control flow, see [`EVENT_LOOP.md`](EVENT_LOOP.md). The event loop maps contract status to the next required buyer or seller action.
@@ -218,6 +220,13 @@ new L402Agent(options: {
 | `evaluateWalletPolicy(policy, request, context?)` | Return `allow`, `deny`, or `ask_human` for a proposed spend |
 | `evaluateContractFunding(contractId, opts?)` | Evaluate a contract funding attempt against a wallet policy |
 | `fundContract(contractId, opts?)` | Enforce configured policy before funding escrow |
+
+### Token Service Cards
+
+| Method | Description |
+|--------|-------------|
+| `createTokenServiceCard(opts)` | Create a deterministic `TokenServiceCard v0` for a prepaid metered inference offer |
+| `verifyTokenServiceCard(card)` | Verify schema, hash, pricing, model inventory, budget cap, metering, accept URL, and seller authorization attestation |
 
 ### Offers
 

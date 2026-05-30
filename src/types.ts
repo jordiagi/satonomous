@@ -385,6 +385,181 @@ export interface ServiceCardVerificationResult {
   expected_body_hash?: string;
 }
 
+export type TokenServiceProviderType = 'local' | 'hosted' | 'byok' | 'brokered' | 'aggregator' | 'unknown';
+export type TokenServiceProviderDisclosure = 'exact' | 'class' | 'undisclosed';
+export type TokenServiceAuthorizationBasis =
+  | 'own_infrastructure'
+  | 'authorized_resale'
+  | 'aggregator_terms'
+  | 'unknown'
+  | 'prohibited_risk';
+export type TokenServicePricingUnit = 'per_1k_tokens' | 'per_1m_tokens';
+export type TokenServiceMeteringMethod = 'seller_signed_usage' | 'gateway_verified' | 'buyer_acknowledged';
+export type TokenServiceRetentionMode = 'none' | 'hash_only' | 'redacted' | 'full' | 'custom';
+
+export interface TokenServiceModel {
+  id: string;
+  display_name?: string;
+  max_context_tokens?: number;
+  max_output_tokens?: number;
+  modalities?: Array<'text' | 'vision' | 'audio' | 'embedding' | 'tool_call'>;
+}
+
+export interface TokenServiceCard {
+  schema: 'satonomous.token-service-card/v0';
+  card_id: string;
+  body_hash: string;
+  issued_at: string;
+  seller: {
+    agent_id: string;
+    payout?: {
+      lightning_address?: string;
+      lnurl?: string;
+    };
+    reputation: ServiceCardSellerReputation | null;
+    trust?: {
+      tier?: 'anonymous' | 'verified' | 'business' | 'infrastructure';
+      policy_flags?: string[];
+    };
+  };
+  service: {
+    service_type: 'llm_inference';
+    title: string;
+    description: string | null;
+    active: boolean;
+    created_at: string;
+    expires_at: string | null;
+  };
+  inference: {
+    api: 'openai-compatible' | 'custom';
+    endpoint?: string;
+    models: TokenServiceModel[];
+    supports?: {
+      chat_completions?: boolean;
+      embeddings?: boolean;
+      streaming?: boolean;
+      tools?: boolean;
+      json_mode?: boolean;
+      vision?: boolean;
+    };
+    provider: {
+      type: TokenServiceProviderType;
+      name?: string;
+      disclosure: TokenServiceProviderDisclosure;
+      authorization_basis: TokenServiceAuthorizationBasis;
+      seller_attests_authorized: boolean;
+      attestation?: string;
+    };
+  };
+  pricing: {
+    currency: 'sats';
+    unit: TokenServicePricingUnit;
+    input_sats: number;
+    output_sats: number;
+    cached_input_sats?: number;
+    request_minimum_sats?: number;
+    minimum_contract_sats?: number;
+    max_contract_sats: number;
+    quote_ttl_seconds?: number;
+    discount?: {
+      reference_provider?: string;
+      reference_input_sats?: number;
+      reference_output_sats?: number;
+      min_discount_pct?: number;
+    };
+  };
+  limits: {
+    max_context_tokens: number;
+    max_output_tokens: number;
+    max_requests_per_contract?: number;
+    max_requests_per_minute?: number;
+    max_concurrent_requests?: number;
+    expires_after_minutes?: number;
+  };
+  metering: {
+    method: TokenServiceMeteringMethod;
+    usage_receipt_schema: 'satonomous.token-usage-receipt/v0';
+    token_counter: 'provider' | 'gateway' | 'tiktoken' | 'custom';
+    dry_run_quote: boolean;
+    idempotency: 'request_id';
+  };
+  privacy: {
+    retention: TokenServiceRetentionMode;
+    log_prompts: boolean;
+    log_completions: boolean;
+    training_use: boolean;
+    public_receipts: 'hash_only' | 'redacted' | 'private';
+  };
+  settlement: {
+    escrow_policy: 'prepaid_metered_escrow';
+    settlement_policy: 'usage_release_unused_refund';
+    dispute_window_minutes: number;
+    refund_unused_sats: boolean;
+    partial_settlement: boolean;
+  };
+  accept: {
+    accept_url: string;
+    contract_template_ref: string;
+  };
+  links?: {
+    quickstart?: string;
+    offer?: string;
+    docs?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+export interface CreateTokenServiceCardOptions {
+  issuedAt?: string;
+  seller: TokenServiceCard['seller'];
+  service: TokenServiceCard['service'];
+  inference: TokenServiceCard['inference'];
+  pricing: TokenServiceCard['pricing'];
+  limits: TokenServiceCard['limits'];
+  metering: Omit<TokenServiceCard['metering'], 'usage_receipt_schema' | 'idempotency'> &
+    Partial<Pick<TokenServiceCard['metering'], 'usage_receipt_schema' | 'idempotency'>>;
+  privacy: TokenServiceCard['privacy'];
+  settlement: Omit<TokenServiceCard['settlement'], 'escrow_policy' | 'settlement_policy'> &
+    Partial<Pick<TokenServiceCard['settlement'], 'escrow_policy' | 'settlement_policy'>>;
+  accept: TokenServiceCard['accept'];
+  links?: TokenServiceCard['links'];
+}
+
+export type TokenServiceCardVerificationCode =
+  | 'valid'
+  | 'unsupported_schema'
+  | 'missing_card_id'
+  | 'missing_body_hash'
+  | 'body_hash_mismatch'
+  | 'card_id_mismatch'
+  | 'inactive_service'
+  | 'missing_accept_url'
+  | 'missing_model'
+  | 'missing_pricing'
+  | 'invalid_price'
+  | 'missing_budget_cap'
+  | 'invalid_limit'
+  | 'missing_metering'
+  | 'missing_authorization_attestation'
+  | 'prohibited_resale_risk'
+  | 'raw_credential_resale'
+  | 'undisclosed_provider'
+  | 'unknown_resale_rights'
+  | 'missing_sla'
+  | 'missing_reputation'
+  | 'no_dry_run_quote'
+  | 'prompt_logging_enabled'
+  | 'completion_logging_enabled'
+  | 'training_use_enabled';
+
+export interface TokenServiceCardVerificationResult {
+  valid: boolean;
+  codes: TokenServiceCardVerificationCode[];
+  warnings: TokenServiceCardVerificationCode[];
+  expected_card_id?: string;
+  expected_body_hash?: string;
+}
+
 export type ContractReceiptOutcome = 'released' | 'disputed' | 'refunded';
 
 export interface ContractReceiptEvidenceRef {
