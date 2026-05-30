@@ -228,6 +228,16 @@ new L402Agent(options: {
 | `createTokenServiceCard(opts)` | Create a deterministic `TokenServiceCard v0` for a prepaid metered inference offer |
 | `verifyTokenServiceCard(card)` | Verify schema, hash, pricing, model inventory, budget cap, metering, accept URL, and seller authorization attestation |
 
+### Metered Escrow Contracts
+
+| Method | Description |
+|--------|-------------|
+| `createMeteredEscrowContract(opts)` | Create a prepaid metered token contract from a `TokenServiceCard` |
+| `quoteMeteredUsage(contract, usage)` | Quote one inference request from token counts before charging escrow |
+| `applyMeteredUsage(contract, usage)` | Add one usage event, reject duplicate request IDs, and burn escrow down deterministically |
+| `closeMeteredEscrowContract(contract, status?)` | Close a metered contract and compute settled/refundable sats |
+| `verifyMeteredEscrowContract(contract)` | Verify hashes, spend totals, duplicate IDs, escrow caps, and refund math |
+
 ### Offers
 
 | Method | Description |

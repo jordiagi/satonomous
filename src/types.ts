@@ -560,6 +560,158 @@ export interface TokenServiceCardVerificationResult {
   expected_body_hash?: string;
 }
 
+export type MeteredEscrowContractStatus =
+  | 'accepted'
+  | 'funded'
+  | 'active'
+  | 'exhausted'
+  | 'completed'
+  | 'refunded'
+  | 'disputed'
+  | 'resolved'
+  | 'expired';
+
+export interface MeteredUsageEvent {
+  schema: 'satonomous.token-usage-event/v0';
+  event_id: string;
+  request_id: string;
+  contract_id: string;
+  created_at: string;
+  model_id: string;
+  input_tokens: number;
+  output_tokens: number;
+  cached_input_tokens?: number;
+  sats_charged: number;
+  metering_source: TokenServiceMeteringMethod | 'gateway';
+  seller_signature?: string;
+  buyer_acknowledged?: boolean;
+  prompt_hash?: string;
+  completion_hash?: string;
+  metadata_hash?: string;
+}
+
+export interface MeteredEscrowContract {
+  schema: 'satonomous.metered-escrow-contract/v0';
+  contract_id: string;
+  terms_hash: string;
+  body_hash: string;
+  issued_at: string;
+  updated_at: string;
+  token_service_card_id: string;
+  token_service_card_hash: string;
+  buyer_agent_id: string;
+  seller_agent_id: string;
+  status: MeteredEscrowContractStatus;
+  pricing: Pick<
+    TokenServiceCard['pricing'],
+    'currency' | 'unit' | 'input_sats' | 'output_sats' | 'cached_input_sats' | 'request_minimum_sats' | 'max_contract_sats'
+  >;
+  limits: Pick<
+    TokenServiceCard['limits'],
+    'max_context_tokens' | 'max_output_tokens' | 'max_requests_per_contract' | 'expires_after_minutes'
+  > & {
+    expires_at: string | null;
+  };
+  metering: Pick<TokenServiceCard['metering'], 'method' | 'token_counter' | 'idempotency'>;
+  escrow: {
+    escrowed_sats: number;
+    spent_sats: number;
+    refundable_sats: number;
+    settled_sats: number;
+    disputed_sats: number;
+  };
+  settlement: Pick<TokenServiceCard['settlement'], 'dispute_window_minutes' | 'refund_unused_sats' | 'partial_settlement'>;
+  usage_events: MeteredUsageEvent[];
+  links?: {
+    token_service_card?: string;
+    receipt?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+export interface CreateMeteredEscrowContractOptions {
+  issuedAt?: string;
+  updatedAt?: string;
+  expiresAt?: string | null;
+  tokenServiceCard: TokenServiceCard;
+  buyerAgentId: string;
+  escrowedSats: number;
+  status?: Extract<MeteredEscrowContractStatus, 'accepted' | 'funded' | 'active'>;
+  links?: MeteredEscrowContract['links'];
+}
+
+export interface MeteredUsageInput {
+  requestId: string;
+  createdAt?: string;
+  modelId: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedInputTokens?: number;
+  meteringSource?: MeteredUsageEvent['metering_source'];
+  sellerSignature?: string;
+  buyerAcknowledged?: boolean;
+  promptHash?: string;
+  completionHash?: string;
+  metadataHash?: string;
+}
+
+export type MeteredEscrowVerificationCode =
+  | 'valid'
+  | 'unsupported_schema'
+  | 'missing_contract_id'
+  | 'missing_terms_hash'
+  | 'missing_body_hash'
+  | 'terms_hash_mismatch'
+  | 'body_hash_mismatch'
+  | 'contract_id_mismatch'
+  | 'missing_token_service_card_ref'
+  | 'invalid_status'
+  | 'invalid_price'
+  | 'invalid_escrow_amount'
+  | 'spend_exceeds_escrow'
+  | 'usage_sum_mismatch'
+  | 'refund_math_mismatch'
+  | 'duplicate_request_id'
+  | 'invalid_usage_event'
+  | 'invalid_expiry';
+
+export interface MeteredEscrowVerificationResult {
+  valid: boolean;
+  codes: MeteredEscrowVerificationCode[];
+  expected_contract_id?: string;
+  expected_terms_hash?: string;
+  expected_body_hash?: string;
+}
+
+export interface MeteredUsageQuote {
+  input_sats: number;
+  output_sats: number;
+  cached_input_sats: number;
+  minimum_applied_sats: number;
+  total_sats: number;
+  remaining_before_sats: number;
+  remaining_after_sats: number;
+}
+
+export type MeteredUsageApplyCode =
+  | 'applied'
+  | 'contract_not_spendable'
+  | 'invalid_usage'
+  | 'unknown_model'
+  | 'usage_exceeds_limits'
+  | 'request_limit_exceeded'
+  | 'duplicate_request_id'
+  | 'insufficient_escrow';
+
+export interface MeteredUsageApplyResult {
+  applied: boolean;
+  codes: MeteredUsageApplyCode[];
+  reasons: string[];
+  quote?: MeteredUsageQuote;
+  event?: MeteredUsageEvent;
+  contract: MeteredEscrowContract;
+}
+
 export type ContractReceiptOutcome = 'released' | 'disputed' | 'refunded';
 
 export interface ContractReceiptEvidenceRef {

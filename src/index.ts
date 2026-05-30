@@ -28,6 +28,13 @@ export { L402Agent, L402Error } from './client.js';
 export { createContractReceipt, verifyContractReceipt } from './receipts.js';
 export { createServiceCard, verifyServiceCard } from './service-cards.js';
 export { createTokenServiceCard, verifyTokenServiceCard } from './token-service-cards.js';
+export {
+  applyMeteredUsage,
+  closeMeteredEscrowContract,
+  createMeteredEscrowContract,
+  quoteMeteredUsage,
+  verifyMeteredEscrowContract,
+} from './metered-escrow-contracts.js';
 export { createWalletPolicy, evaluateWalletPolicy, verifyWalletPolicy } from './wallet-policies.js';
 export { getContractNextAction } from './contract-actions.js';
 export type {
@@ -74,6 +81,16 @@ export type {
   CreateTokenServiceCardOptions,
   TokenServiceCardVerificationCode,
   TokenServiceCardVerificationResult,
+  MeteredEscrowContractStatus,
+  MeteredUsageEvent,
+  MeteredEscrowContract,
+  CreateMeteredEscrowContractOptions,
+  MeteredUsageInput,
+  MeteredEscrowVerificationCode,
+  MeteredEscrowVerificationResult,
+  MeteredUsageQuote,
+  MeteredUsageApplyCode,
+  MeteredUsageApplyResult,
   WalletPolicy,
   CreateWalletPolicyOptions,
   WalletPolicyVerificationCode,

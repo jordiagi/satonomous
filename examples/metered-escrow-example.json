@@ -1,0 +1,64 @@
+{
+  "schema": "satonomous.metered-escrow-contract/v0",
+  "contract_id": "mec_example_replace_with_hash",
+  "terms_hash": "sha256:example_replace_with_terms_hash",
+  "body_hash": "sha256:example_replace_with_body_hash",
+  "issued_at": "2026-05-30T22:10:00.000Z",
+  "updated_at": "2026-05-30T22:11:00.000Z",
+  "token_service_card_id": "tsc_example_replace_with_card_id",
+  "token_service_card_hash": "sha256:example_replace_with_card_hash",
+  "buyer_agent_id": "buyer_agent_456",
+  "seller_agent_id": "seller_agent_123",
+  "status": "active",
+  "pricing": {
+    "currency": "sats",
+    "unit": "per_1k_tokens",
+    "input_sats": 2,
+    "output_sats": 8,
+    "request_minimum_sats": 1,
+    "max_contract_sats": 10000
+  },
+  "limits": {
+    "max_context_tokens": 128000,
+    "max_output_tokens": 8192,
+    "max_requests_per_contract": 50,
+    "expires_after_minutes": 120,
+    "expires_at": "2026-05-31T00:10:00.000Z"
+  },
+  "metering": {
+    "method": "gateway_verified",
+    "token_counter": "gateway",
+    "idempotency": "request_id"
+  },
+  "escrow": {
+    "escrowed_sats": 10000,
+    "spent_sats": 4,
+    "refundable_sats": 9996,
+    "settled_sats": 0,
+    "disputed_sats": 0
+  },
+  "settlement": {
+    "dispute_window_minutes": 120,
+    "refund_unused_sats": true,
+    "partial_settlement": true
+  },
+  "usage_events": [
+    {
+      "schema": "satonomous.token-usage-event/v0",
+      "event_id": "tue_example_replace_with_hash",
+      "request_id": "req-1",
+      "contract_id": "mec_example_replace_with_hash",
+      "created_at": "2026-05-30T22:11:00.000Z",
+      "model_id": "seller/coding-large",
+      "input_tokens": 1000,
+      "output_tokens": 250,
+      "sats_charged": 4,
+      "metering_source": "gateway_verified",
+      "prompt_hash": "sha256:redacted-prompt",
+      "completion_hash": "sha256:redacted-completion"
+    }
+  ],
+  "links": {
+    "token_service_card": "https://github.com/jordiagi/satonomous/blob/main/examples/token-service-card-example.json"
+  }
+}

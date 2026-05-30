@@ -3,6 +3,13 @@ import { L402Agent, L402Error } from '../client.js';
 import { createContractReceipt, verifyContractReceipt } from '../receipts.js';
 import { createServiceCard, verifyServiceCard } from '../service-cards.js';
 import { createTokenServiceCard, verifyTokenServiceCard } from '../token-service-cards.js';
+import {
+  applyMeteredUsage,
+  closeMeteredEscrowContract,
+  createMeteredEscrowContract,
+  quoteMeteredUsage,
+  verifyMeteredEscrowContract,
+} from '../metered-escrow-contracts.js';
 import { createWalletPolicy, evaluateWalletPolicy, verifyWalletPolicy } from '../wallet-policies.js';
 import { getContractNextAction } from '../contract-actions.js';
 import type { Contract, CreateTokenServiceCardOptions, LedgerEntry, Offer } from '../types.js';
@@ -10,6 +17,108 @@ import type { Contract, CreateTokenServiceCardOptions, LedgerEntry, Offer } from
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+function tokenServiceCardOptions(): CreateTokenServiceCardOptions {
+  return {
+    issuedAt: '2026-05-30T22:00:00.000Z',
+    seller: {
+      agent_id: 'seller_agent_123',
+      payout: { lightning_address: 'seller@example.com' },
+      reputation: {
+        score: 82,
+        level: 'gold',
+        settled_contracts: 9,
+        dispute_rate: 0.1,
+        total_volume_sats: 50_000,
+        unique_counterparties: 7,
+      },
+      trust: { tier: 'verified', policy_flags: [] },
+    },
+    service: {
+      service_type: 'llm_inference',
+      title: 'Discounted coding-model inference',
+      description: 'OpenAI-compatible chat completions served through prepaid Satonomous escrow.',
+      active: true,
+      created_at: '2026-05-30T22:00:00.000Z',
+      expires_at: null,
+    },
+    inference: {
+      api: 'openai-compatible',
+      endpoint: 'https://seller.example.com/v1',
+      models: [
+        {
+          id: 'seller/coding-large',
+          display_name: 'Coding Large',
+          max_context_tokens: 128_000,
+          max_output_tokens: 8192,
+          modalities: ['text', 'tool_call'],
+        },
+      ],
+      supports: {
+        chat_completions: true,
+        streaming: true,
+        tools: true,
+        json_mode: true,
+      },
+      provider: {
+        type: 'hosted',
+        name: 'seller-operated gateway',
+        disclosure: 'class',
+        authorization_basis: 'authorized_resale',
+        seller_attests_authorized: true,
+        attestation:
+          'Seller attests it is authorized to provide this inference service and is not sharing raw provider credentials.',
+      },
+    },
+    pricing: {
+      currency: 'sats',
+      unit: 'per_1k_tokens',
+      input_sats: 2,
+      output_sats: 8,
+      request_minimum_sats: 1,
+      minimum_contract_sats: 100,
+      max_contract_sats: 10_000,
+      quote_ttl_seconds: 60,
+      discount: {
+        reference_provider: 'public-retail',
+        min_discount_pct: 50,
+      },
+    },
+    limits: {
+      max_context_tokens: 128_000,
+      max_output_tokens: 8192,
+      max_requests_per_contract: 50,
+      max_requests_per_minute: 6,
+      max_concurrent_requests: 2,
+      expires_after_minutes: 120,
+    },
+    metering: {
+      method: 'gateway_verified',
+      token_counter: 'gateway',
+      dry_run_quote: true,
+    },
+    privacy: {
+      retention: 'hash_only',
+      log_prompts: false,
+      log_completions: false,
+      training_use: false,
+      public_receipts: 'hash_only',
+    },
+    settlement: {
+      dispute_window_minutes: 120,
+      refund_unused_sats: true,
+      partial_settlement: true,
+    },
+    accept: {
+      accept_url: 'satonomous://token-services/seller-coding-large/accept',
+      contract_template_ref: 'satonomous:token-service:seller-coding-large',
+    },
+    links: {
+      docs: 'https://github.com/jordiagi/satonomous/blob/main/TOKEN_SERVICE_CARDS.md',
+      quickstart: 'https://github.com/jordiagi/satonomous-mcp',
+    },
+  };
+}
 
 describe('L402Agent', () => {
   it('requires apiKey in constructor', () => {
@@ -401,6 +510,144 @@ describe('L402Agent', () => {
     expect(result.warnings).toContain('undisclosed_provider');
     expect(result.warnings).toContain('missing_reputation');
     expect(result.warnings).toContain('prompt_logging_enabled');
+  });
+
+  it('creates and verifies deterministic metered escrow contracts', () => {
+    const card = createTokenServiceCard(tokenServiceCardOptions());
+    const contract = createMeteredEscrowContract({
+      issuedAt: '2026-05-30T22:10:00.000Z',
+      tokenServiceCard: card,
+      buyerAgentId: 'buyer_agent_456',
+      escrowedSats: 10_000,
+    });
+    const sameContract = createMeteredEscrowContract({
+      issuedAt: '2026-05-30T22:10:00.000Z',
+      tokenServiceCard: card,
+      buyerAgentId: 'buyer_agent_456',
+      escrowedSats: 10_000,
+    });
+
+    expect(contract.contract_id).toBe(sameContract.contract_id);
+    expect(contract.contract_id).toMatch(/^mec_/);
+    expect(contract.terms_hash).toMatch(/^sha256:/);
+    expect(contract.body_hash).toMatch(/^sha256:/);
+    expect(contract.token_service_card_id).toBe(card.card_id);
+    expect(contract.escrow.refundable_sats).toBe(10_000);
+    expect(contract.limits.expires_at).toBe('2026-05-31T00:10:00.000Z');
+    expect(verifyMeteredEscrowContract(contract)).toMatchObject({
+      valid: true,
+      codes: ['valid'],
+    });
+  });
+
+  it('quotes and applies metered token usage against escrow', () => {
+    const card = createTokenServiceCard(tokenServiceCardOptions());
+    const contract = createMeteredEscrowContract({
+      issuedAt: '2026-05-30T22:10:00.000Z',
+      tokenServiceCard: card,
+      buyerAgentId: 'buyer_agent_456',
+      escrowedSats: 10_000,
+    });
+
+    const quote = quoteMeteredUsage(contract, {
+      requestId: 'req-1',
+      modelId: 'seller/coding-large',
+      inputTokens: 1_000,
+      outputTokens: 250,
+    });
+    expect(quote.total_sats).toBe(4);
+    expect(quote.remaining_after_sats).toBe(9_996);
+
+    const result = applyMeteredUsage(contract, {
+      requestId: 'req-1',
+      createdAt: '2026-05-30T22:11:00.000Z',
+      modelId: 'seller/coding-large',
+      inputTokens: 1_000,
+      outputTokens: 250,
+      promptHash: 'sha256:prompt',
+      completionHash: 'sha256:completion',
+    });
+
+    expect(result.applied).toBe(true);
+    expect(result.codes).toEqual(['applied']);
+    expect(result.event?.event_id).toMatch(/^tue_/);
+    expect(result.contract.status).toBe('active');
+    expect(result.contract.escrow.spent_sats).toBe(4);
+    expect(result.contract.escrow.refundable_sats).toBe(9_996);
+    expect(verifyMeteredEscrowContract(result.contract).valid).toBe(true);
+  });
+
+  it('rejects duplicate request ids and over-budget metered usage', () => {
+    const card = createTokenServiceCard(tokenServiceCardOptions());
+    const contract = createMeteredEscrowContract({
+      issuedAt: '2026-05-30T22:10:00.000Z',
+      tokenServiceCard: card,
+      buyerAgentId: 'buyer_agent_456',
+      escrowedSats: 10,
+    });
+    const first = applyMeteredUsage(contract, {
+      requestId: 'req-duplicate',
+      modelId: 'seller/coding-large',
+      inputTokens: 1_000,
+      outputTokens: 250,
+    });
+
+    const duplicate = applyMeteredUsage(first.contract, {
+      requestId: 'req-duplicate',
+      modelId: 'seller/coding-large',
+      inputTokens: 1_000,
+      outputTokens: 250,
+    });
+    expect(duplicate.applied).toBe(false);
+    expect(duplicate.codes).toContain('duplicate_request_id');
+
+    const overBudget = applyMeteredUsage(first.contract, {
+      requestId: 'req-too-large',
+      modelId: 'seller/coding-large',
+      inputTokens: 1_000,
+      outputTokens: 1_000,
+    });
+    expect(overBudget.applied).toBe(false);
+    expect(overBudget.codes).toContain('insufficient_escrow');
+  });
+
+  it('closes metered escrow with unused sats refundable', () => {
+    const card = createTokenServiceCard(tokenServiceCardOptions());
+    const contract = createMeteredEscrowContract({
+      issuedAt: '2026-05-30T22:10:00.000Z',
+      tokenServiceCard: card,
+      buyerAgentId: 'buyer_agent_456',
+      escrowedSats: 10_000,
+    });
+    const spent = applyMeteredUsage(contract, {
+      requestId: 'req-close',
+      modelId: 'seller/coding-large',
+      inputTokens: 1_000,
+      outputTokens: 250,
+    });
+    const closed = closeMeteredEscrowContract(spent.contract, 'completed', '2026-05-30T22:12:00.000Z');
+
+    expect(closed.status).toBe('completed');
+    expect(closed.escrow.spent_sats).toBe(4);
+    expect(closed.escrow.settled_sats).toBe(4);
+    expect(closed.escrow.refundable_sats).toBe(9_996);
+    expect(verifyMeteredEscrowContract(closed).valid).toBe(true);
+  });
+
+  it('flags mutated metered escrow contracts', () => {
+    const card = createTokenServiceCard(tokenServiceCardOptions());
+    const contract = createMeteredEscrowContract({
+      issuedAt: '2026-05-30T22:10:00.000Z',
+      tokenServiceCard: card,
+      buyerAgentId: 'buyer_agent_456',
+      escrowedSats: 10_000,
+    });
+    contract.escrow.spent_sats = 500;
+
+    const result = verifyMeteredEscrowContract(contract);
+    expect(result.valid).toBe(false);
+    expect(result.codes).toContain('body_hash_mismatch');
+    expect(result.codes).toContain('usage_sum_mismatch');
   });
 
   it('creates and evaluates deterministic wallet policies', () => {
