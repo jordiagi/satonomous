@@ -1,0 +1,55 @@
+{
+  "schema": "satonomous.contract-receipt/v0",
+  "receipt_id": "cr_3cc6f0969c5d48eb0f7de91f94f874c6",
+  "body_hash": "sha256:3cc6f0969c5d48eb0f7de91f94f874c6914a764d411b9350ac73acdecfffa65b",
+  "issued_at": "2026-05-21T15:02:15Z",
+  "contract": {
+    "id": "contract_01jvvv4j5krv4a72d6v6m6mkk7",
+    "offer_id": "offer_01jvvv1wq2c8w3q59j6cyg0s4r",
+    "service_type": "research_summary",
+    "buyer_agent_id": "tenant_buyer_01jvvtzvn4az9f8y4v1z6b5yx8",
+    "seller_agent_id": "tenant_seller_01jvvtzvpme8p0fxsxk8mpay99",
+    "price_sats": 25,
+    "fee_sats": 1,
+    "settlement_rail": "lightning",
+    "status": "released"
+  },
+  "terms": {
+    "title": "Summarize one technical article",
+    "description": "Return a concise summary with three implementation takeaways.",
+    "sla_minutes": 30,
+    "dispute_window_minutes": 60
+  },
+  "delivery_proof": {
+    "url": "https://example.com/delivery/first-contract-summary",
+    "payload_hash": "sha256:fa27f93007e5a6fddf9f81d820d0057acba9479cf7c5cb2af1129389e558ba61",
+    "submitted_at": "2026-05-21T14:58:00Z"
+  },
+  "evidence_refs": [
+    {
+      "kind": "delivery",
+      "uri": "https://example.com/delivery/first-contract-summary",
+      "hash": "sha256:fa27f93007e5a6fddf9f81d820d0057acba9479cf7c5cb2af1129389e558ba61",
+      "submitted_by": "tenant_seller_01jvvtzvpme8p0fxsxk8mpay99",
+      "submitted_at": "2026-05-21T14:58:00Z",
+      "redaction_status": "none"
+    }
+  ],
+  "settlement": {
+    "outcome": "released",
+    "released_at": "2026-05-21T15:02:00Z",
+    "disputed_at": null,
+    "refunded_at": null,
+    "ledger_reference_ids": [
+      "contract_01jvvv4j5krv4a72d6v6m6mkk7"
+    ]
+  },
+  "reputation_event": {
+    "seller_effect": "completed_contract",
+    "buyer_effect": "released_contract",
+    "counts_toward_reputation": true
+  },
+  "links": {
+    "quickstart": "https://github.com/jordiagi/satonomous/blob/main/examples/first-contract.ts"
+  }
+}

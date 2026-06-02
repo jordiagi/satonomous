@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import type {
   L402AgentOptions,
   BalanceInfo,
@@ -11,7 +12,28 @@ import type {
   WithdrawResult,
   AgentRegistration,
   PaymentNeededCallback,
+  ListOffersParams,
+  TenantInfo,
+  TenantReputation,
+  ContractReceipt,
+  ContractReceiptVerificationResult,
+  ServiceCard,
+  ServiceCardVerificationResult,
+  CreateServiceCardOptions,
+  WalletPolicy,
+  WalletPolicyContext,
+  WalletPolicyDecision,
+  WalletPolicySpendRequest,
+  FundContractPolicyOptions,
+  ContractActionOptions,
+  ContractNextAction,
+  ContractRole,
+  WaitForContractActionOptions,
 } from './types.js';
+import { createContractReceipt, verifyContractReceipt } from './receipts.js';
+import { createServiceCard, verifyServiceCard } from './service-cards.js';
+import { evaluateWalletPolicy } from './wallet-policies.js';
+import { getContractNextAction } from './contract-actions.js';
 
 export class L402Error extends Error {
   status: number;
@@ -32,6 +54,8 @@ export class L402Agent {
   private onPaymentNeeded?: PaymentNeededCallback;
   private paymentTimeoutMs: number;
   private paymentPollIntervalMs: number;
+  private walletPolicy?: WalletPolicy;
+  private onPolicyApprovalNeeded?: L402AgentOptions['onPolicyApprovalNeeded'];
 
   constructor(options: L402AgentOptions) {
     if (!options.apiKey) {
@@ -42,20 +66,30 @@ export class L402Agent {
     this.onPaymentNeeded = options.onPaymentNeeded;
     this.paymentTimeoutMs = options.paymentTimeoutMs ?? 300_000;
     this.paymentPollIntervalMs = options.paymentPollIntervalMs ?? 5_000;
+    this.walletPolicy = options.walletPolicy;
+    this.onPolicyApprovalNeeded = options.onPolicyApprovalNeeded;
   }
 
-  private async request<T>(method: string, path: string, body?: any): Promise<T> {
+  private async request<T>(method: string, path: string, body?: any, auth = true): Promise<T> {
     const url = `${this.apiUrl}${path}`;
+    const bodyString = body === undefined ? '' : JSON.stringify(body);
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (auth) {
+      const timestamp = Date.now().toString();
+      const signingPayload = `${method}\n${path}\n${timestamp}\n${bodyString}`;
+      headers['X-L402-Key'] = this.apiKey;
+      headers['X-L402-Timestamp'] = timestamp;
+      headers['X-L402-Signature'] = createHmac('sha256', this.apiKey).update(signingPayload).digest('hex');
+    }
     const options: RequestInit = {
       method,
-      headers: {
-        'X-L402-Key': this.apiKey,
-        'Content-Type': 'application/json',
-      },
+      headers,
     };
 
-    if (body) {
-      options.body = JSON.stringify(body);
+    if (body !== undefined) {
+      options.body = bodyString;
     }
 
     const res = await fetch(url, options);
@@ -76,6 +110,17 @@ export class L402Agent {
     }
 
     return res.json() as Promise<T>;
+  }
+
+  private buildQuery(params?: object): string {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params || {})) {
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        query.append(key, String(value));
+      }
+    }
+    const encoded = query.toString();
+    return encoded ? `?${encoded}` : '';
   }
 
   // Static: register a new agent (no auth needed)
@@ -250,23 +295,70 @@ export class L402Agent {
 
   // Offers
   async createOffer(params: CreateOfferParams): Promise<Offer> {
-    const { sla_minutes, dispute_window_minutes, ...rest } = params;
     return this.request('POST', '/api/v1/offers', {
-      ...rest,
+      title: params.title,
+      description: params.description,
+      price_sats: params.price_sats,
+      service_type: params.service_type,
       terms: {
-        sla_minutes: sla_minutes ?? 30,
-        dispute_window_minutes: dispute_window_minutes ?? 1440,
+        sla_minutes: params.sla_minutes ?? 30,
+        dispute_window_minutes: params.dispute_window_minutes ?? 1440,
       },
     });
   }
 
-  async listOffers(): Promise<Offer[]> {
-    const result = await this.request<{ offers: Offer[] }>('GET', '/api/v1/offers');
+  async getTenant(): Promise<TenantInfo> {
+    return this.request('GET', '/api/v1/tenants/me');
+  }
+
+  async getReputation(tenantId?: string): Promise<TenantReputation> {
+    const id = tenantId ?? (await this.getTenant()).tenant_id;
+    return this.request('GET', `/api/v1/reputation/${encodeURIComponent(id)}`);
+  }
+
+  async listOffers(filters?: ListOffersParams): Promise<Offer[]> {
+    const result = await this.request<{ offers: Offer[] }>('GET', `/api/v1/offers${this.buildQuery(filters)}`);
+    return result.offers || [];
+  }
+
+  async browseOffers(filters?: ListOffersParams): Promise<Offer[]> {
+    const result = await this.request<{ offers: Offer[] }>(
+      'GET',
+      `/api/v1/offers${this.buildQuery(filters)}`,
+      undefined,
+      false
+    );
     return result.offers || [];
   }
 
   async getOffer(offerId: string): Promise<Offer> {
     return this.request('GET', `/api/v1/offers/${offerId}`);
+  }
+
+  async getServiceCard(offerId: string, options?: CreateServiceCardOptions): Promise<ServiceCard> {
+    const offer = await this.getOffer(offerId);
+    let reputation: TenantReputation | null = null;
+    try {
+      reputation = await this.getReputation(offer.seller_tenant_id);
+    } catch {
+      reputation = null;
+    }
+    return createServiceCard(offer, reputation, {
+      links: {
+        quickstart: 'https://github.com/jordiagi/satonomous/blob/main/examples/first-contract.ts',
+        offer: `${this.apiUrl}/api/v1/offers/${encodeURIComponent(offer.id)}`,
+      },
+      ...options,
+    });
+  }
+
+  async browseServiceCards(filters?: ListOffersParams, options?: CreateServiceCardOptions): Promise<ServiceCard[]> {
+    const offers = await this.browseOffers(filters);
+    return offers.map((offer) => createServiceCard(offer, null, options));
+  }
+
+  verifyServiceCard(card: ServiceCard): ServiceCardVerificationResult {
+    return verifyServiceCard(card);
   }
 
   async updateOffer(offerId: string, active: boolean): Promise<Offer> {
@@ -278,7 +370,28 @@ export class L402Agent {
     return this.request('POST', '/api/v1/contracts', { offer_id: offerId });
   }
 
-  async fundContract(contractId: string): Promise<FundResult> {
+  async fundContract(contractId: string, options: FundContractPolicyOptions = {}): Promise<FundResult> {
+    const policy = options.policy ?? this.walletPolicy;
+    if (policy) {
+      const decision = await this.evaluateContractFunding(contractId, { ...options, policy });
+      if (decision.decision === 'deny') {
+        throw new L402Error(
+          `WalletPolicy denied funding ${contractId}: ${decision.reasons.join('; ')}`,
+          403,
+          'WALLET_POLICY_DENIED'
+        );
+      }
+      if (decision.decision === 'ask_human' && !options.humanApproved) {
+        const approved = await this.onPolicyApprovalNeeded?.(decision);
+        if (approved !== true) {
+          throw new L402Error(
+            `WalletPolicy requires human approval for ${contractId}: ${decision.reasons.join('; ')}`,
+            402,
+            'WALLET_POLICY_APPROVAL_REQUIRED'
+          );
+        }
+      }
+    }
     return this.request('POST', `/api/v1/contracts/${contractId}/fund`, {});
   }
 
@@ -294,6 +407,106 @@ export class L402Agent {
 
   async getContract(contractId: string): Promise<Contract> {
     return this.request('GET', `/api/v1/contracts/${contractId}`);
+  }
+
+  private async inferRole(contract: Contract): Promise<ContractRole> {
+    try {
+      const tenant = await this.getTenant();
+      if (tenant.tenant_id === contract.buyer_tenant_id) return 'buyer';
+      if (tenant.tenant_id === contract.seller_tenant_id) return 'seller';
+    } catch {
+      // Fall through to observer when tenant lookup is unavailable.
+    }
+    return 'observer';
+  }
+
+  async getContractNextAction(
+    contractId: string,
+    options: ContractActionOptions = {}
+  ): Promise<ContractNextAction> {
+    const contract = await this.getContract(contractId);
+    const role = options.role ?? (await this.inferRole(contract));
+    return getContractNextAction(contract, { ...options, role });
+  }
+
+  async listContractActions(
+    filters?: { role?: 'buyer' | 'seller'; status?: string },
+    options: ContractActionOptions = {}
+  ): Promise<ContractNextAction[]> {
+    const contracts = await this.listContracts(filters);
+    return Promise.all(
+      contracts.map(async (contract) => {
+        const role = options.role ?? (await this.inferRole(contract));
+        return getContractNextAction(contract, { ...options, role });
+      })
+    );
+  }
+
+  async waitForContractAction(
+    contractId: string,
+    options: WaitForContractActionOptions = {}
+  ): Promise<ContractNextAction> {
+    const timeoutMs = options.timeoutMs ?? 60_000;
+    const pollIntervalMs = options.pollIntervalMs ?? 5_000;
+    const deadline = Date.now() + timeoutMs;
+
+    while (Date.now() <= deadline) {
+      const next = await this.getContractNextAction(contractId, options);
+      if (
+        (!options.action || next.action === options.action) &&
+        (!options.status || next.status === options.status)
+      ) {
+        return next;
+      }
+      if (next.terminal && !options.action && !options.status) return next;
+      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+    }
+
+    throw new L402Error(
+      `Timed out waiting for contract ${contractId}` +
+      `${options.action ? ` action ${options.action}` : ''}` +
+      `${options.status ? ` status ${options.status}` : ''}`,
+      408,
+      'CONTRACT_WATCH_TIMEOUT'
+    );
+  }
+
+  evaluateWalletPolicy(
+    policy: WalletPolicy,
+    request: WalletPolicySpendRequest,
+    context?: WalletPolicyContext
+  ): WalletPolicyDecision {
+    return evaluateWalletPolicy(policy, request, context);
+  }
+
+  async evaluateContractFunding(
+    contractId: string,
+    options: FundContractPolicyOptions = {}
+  ): Promise<WalletPolicyDecision> {
+    const policy = options.policy ?? this.walletPolicy;
+    if (!policy) {
+      throw new Error('No WalletPolicy configured. Pass options.policy or set walletPolicy in the constructor.');
+    }
+
+    const contract = await this.getContract(contractId);
+    const terms = contract.terms_snapshot && typeof contract.terms_snapshot === 'object'
+      ? contract.terms_snapshot
+      : {};
+    const amount = contract.price_sats + contract.fee_sats;
+    return evaluateWalletPolicy(
+      policy,
+      {
+        amount_sats: amount,
+        price_sats: contract.price_sats,
+        fee_sats: contract.fee_sats,
+        counterparty_tenant_id: contract.seller_tenant_id,
+        service_type: typeof terms.service_type === 'string' ? terms.service_type : null,
+        offer_id: contract.offer_id,
+        contract_id: contract.id,
+        description: typeof terms.title === 'string' ? terms.title : undefined,
+      },
+      options.context
+    );
   }
 
   // Delivery
@@ -323,5 +536,19 @@ export class L402Agent {
     if (offset) params.append('offset', String(offset));
     if (params.toString()) path += '?' + params.toString();
     return this.request('GET', path);
+  }
+
+  async getContractReceipt(contractId: string): Promise<ContractReceipt> {
+    const contract = await this.getContract(contractId);
+    const { entries } = await this.getLedger(100);
+    return createContractReceipt(contract, entries, {
+      links: {
+        quickstart: 'https://github.com/jordiagi/satonomous/blob/main/examples/first-contract.ts',
+      },
+    });
+  }
+
+  verifyContractReceipt(receipt: ContractReceipt): ContractReceiptVerificationResult {
+    return verifyContractReceipt(receipt);
   }
 }
